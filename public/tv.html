@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CENTERFRIOS TV</title>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; background:#000000; overflow:hidden; font-family: Arial, Helvetica, sans-serif; }
+  #stage { position:absolute; top:0; left:0; width:100%; height:100%; background:#000000; }
+  #media img, #media video { position:absolute; top:0; left:0; width:100%; height:100%; }
+  #pair { position:absolute; top:0; left:0; width:100%; height:100%; text-align:center; color:#FFFFFF; }
+  #pair img { margin-top:6%; width:38%; }
+  .lbl { font-size:28px; margin-top:36px; color:#FFFFFF; }
+  #code { font-size:120px; font-weight:bold; color:#FFC700; letter-spacing:14px; margin-top:10px; }
+  .inst { font-size:28px; margin-top:20px; color:#FFFFFF; }
+  .slogan { font-size:20px; margin-top:40px; color:#FFC700; }
+  #status { position:absolute; bottom:10px; right:14px; color:#444444; font-size:14px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="media"></div>
+  <div id="pair">
+    <img src="/logo.png" alt="CENTERFRIOS">
+    <div class="lbl">C&oacute;digo de pareamento desta TV</div>
+    <div id="code">------</div>
+    <div class="inst">Acesse o painel no celular para ativar esta TV</div>
+    <div class="slogan">CENTERFRIOS &mdash; Crescendo com voc&ecirc;</div>
+  </div>
+  <div id="status"></div>
+</div>
+<script type="text/javascript">
+/* CENTERFRIOS TV Player - ES5 puro, sem modulos, compativel com Saphi OS */
+(function () {
+  var SUPA_URL = "https://ovrgtfpcjowptktrtzir.supabase.co";
+  var SUPA_KEY = "sb_publishable_crlEYmYyg709iLRqJate8w_2qemA7Xk";
+  var K_ID = "cf_tv_id";
+  var K_CODE = "cf_tv_code";
+  var K_PL = "cf_playlist_cache";
+
+  var pairEl = document.getElementById("pair");
+  var codeEl = document.getElementById("code");
+  var mediaEl = document.getElementById("media");
+  var statusEl = document.getElementById("status");
+
+  var tvId = null;
+  var items = [];
+  var idx = 0;
+  var playing = false;
+  var currentPlaylistId = null;
+  var timer = null;
+
+  function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+
+  function req(method, path, body, cb) {
+    var url = SUPA_URL + path;
+    var done = false;
+    function finish(err, data) { if (!done) { done = true; cb(err, data); } }
+    var headers = { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY, "Content-Type": "application/json" };
+    if (typeof window.fetch === "function") {
+      var opts = { method: method, headers: headers };
+      if (body) { opts.body = JSON.stringify(body); }
+      window.fetch(url, opts).then(function (r) {
+        return r.text();
+      }).then(function (t) {
+        var d = null;
+        try { d = t ? JSON.parse(t) : null; } catch (e) { d = null; }
+        finish(null, d);
+      })["catch"](function (e) { finish(e, null); });
+      return;
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    for (var h in headers) { if (headers.hasOwnProperty(h)) { xhr.setRequestHeader(h, headers[h]); } }
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var d = null;
+          try { d = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (e) { d = null; }
+          finish(null, d);
+        } else {
+          finish(new Error("HTTP " + xhr.status), null);
+        }
+      }
+    };
+    xhr.send(body ? JSON.stringify(body) : null);
+  }
+
+  function genCode() {
+    var c = "";
+    for (var i = 0; i < 6; i++) { c += String(Math.floor(Math.random() * 10)); }
+    return c;
+  }
+
+  function showPairing(code) {
+    codeEl.innerHTML = code;
+    pairEl.className = "";
+    mediaEl.innerHTML = "";
+    playing = false;
+  }
+
+  function boot() {
+    var code = ls(K_CODE);
+    if (!code) { code = genCode(); lsSet(K_CODE, code); }
+    showPairing(code);
+    tvId = ls(K_ID);
+    req("POST", "/rest/v1/rpc/register_tv", { _code: code }, function (err, data) {
+      if (!err && data && typeof data === "string") {
+        tvId = data;
+        lsSet(K_ID, data);
+      }
+      var cached = ls(K_PL);
+      if (cached) {
+        try {
+          var arr = JSON.parse(cached);
+          if (arr && arr.length) { items = arr; }
+        } catch (e) {}
+      }
+      poll();
+      setInterval(poll, 3000);
+      setInterval(ping, 30000);
+    });
+  }
+
+  function ping() {
+    if (!tvId) { return; }
+    req("POST", "/rest/v1/rpc/tv_ping", { _id: tvId }, function () {});
+  }
+
+  function poll() {
+    if (!tvId) { return; }
+    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=id,is_paired,playlist_id,is_live_active", null, function (err, rows) {
+      if (err || !rows || !rows.length) {
+        statusEl.innerHTML = "sem conexao";
+        if (!playing && items.length) { startLoop(); }
+        return;
+      }
+      statusEl.innerHTML = "";
+      var tv = rows[0];
+      if (!tv.is_paired) { showPairing(ls(K_CODE) || ""); return; }
+      if (tv.playlist_id !== currentPlaylistId) {
+        currentPlaylistId = tv.playlist_id;
+        loadPlaylist(tv.playlist_id);
+      } else if (!playing && items.length) {
+        startLoop();
+      }
+    });
+  }
+
+  function loadPlaylist(pid) {
+    if (!pid) { return; }
+    req("GET", "/rest/v1/playlists?id=eq." + pid + "&select=id,items", null, function (err, pls) {
+      if (err || !pls || !pls.length) { return; }
+      var raw = pls[0].items || [];
+      raw.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+      req("GET", "/rest/v1/media?select=id,title,url,type,duration", null, function (err2, meds) {
+        if (err2 || !meds) { return; }
+        var byId = {};
+        for (var i = 0; i < meds.length; i++) { byId[meds[i].id] = meds[i]; }
+        var list = [];
+        for (var j = 0; j < raw.length; j++) {
+          var m = byId[raw[j].media_id];
+          if (m) {
+            list.push({
+              url: m.url,
+              type: m.type,
+              duration: raw[j].custom_duration || m.duration || 10
+            });
+          }
+        }
+        items = list;
+        idx = 0;
+        try { lsSet(K_PL, JSON.stringify(list)); } catch (e) {}
+        if (items.length) { startLoop(); }
+      });
+    });
+  }
+
+  function startLoop() {
+    playing = true;
+    pairEl.className = "hidden";
+    render();
+  }
+
+  function next() {
+    idx = (idx + 1) % (items.length || 1);
+    render();
+  }
+
+  function render() {
+    if (!items.length) { return; }
+    if (timer) { clearTimeout(timer); timer = null; }
+    var it = items[idx % items.length];
+    mediaEl.innerHTML = "";
+    if (it.type === "video") {
+      var v = document.createElement("video");
+      v.src = it.url;
+      v.autoplay = true;
+      v.muted = true;
+      v.setAttribute("muted", "muted");
+      v.setAttribute("autoplay", "autoplay");
+      v.setAttribute("playsinline", "");
+      v.setAttribute("webkit-playsinline", "");
+      v.onended = next;
+      v.onerror = next;
+      mediaEl.appendChild(v);
+      try { v.play(); } catch (e) {}
+      timer = setTimeout(next, 600000);
+    } else {
+      var img = document.createElement("img");
+      img.onerror = next;
+      img.src = it.url;
+      mediaEl.appendChild(img);
+      var secs = it.duration > 2 ? it.duration : 10;
+      timer = setTimeout(next, secs * 1000);
+    }
+    // pre-buffer do proximo item
+    if (items.length > 1) {
+      var nx = items[(idx + 1) % items.length];
+      if (nx.type === "video") {
+        var pv = document.createElement("video");
+        pv.src = nx.url;
+        pv.preload = "auto";
+        pv.muted = true;
+        pv.style.position = "absolute";
+        pv.style.width = "1px";
+        pv.style.height = "1px";
+        pv.style.opacity = "0.01";
+        mediaEl.appendChild(pv);
+      } else {
+        var pi = new Image();
+        pi.src = nx.url;
+      }
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
