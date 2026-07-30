@@ -157,21 +157,26 @@
       if (!tv.is_paired) { showPairing(ls(K_CODE) || ""); return; }
       if (tv.playlist_id !== currentPlaylistId) {
         currentPlaylistId = tv.playlist_id;
+        pairEl.className = "hidden";
+        if (!items.length) { showLoading(true); }
         loadPlaylist(tv.playlist_id);
       } else if (!playing && items.length) {
         startLoop();
+      } else if (!playing && !items.length) {
+        pairEl.className = "hidden";
+        showLoading(true);
       }
     });
   }
 
   function loadPlaylist(pid) {
-    if (!pid) { return; }
+    if (!pid) { showLoading(true); return; }
     req("GET", "/rest/v1/playlists?id=eq." + pid + "&select=id,items", null, function (err, pls) {
-      if (err || !pls || !pls.length) { return; }
+      if (err || !pls || !pls.length) { if (!playing) { showLoading(true); } return; }
       var raw = pls[0].items || [];
       raw.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       req("GET", "/rest/v1/media?select=id,title,url,type,duration", null, function (err2, meds) {
-        if (err2 || !meds) { return; }
+        if (err2 || !meds) { if (!playing) { showLoading(true); } return; }
         var byId = {};
         for (var i = 0; i < meds.length; i++) { byId[meds[i].id] = meds[i]; }
         var list = [];
@@ -188,10 +193,11 @@
         items = list;
         idx = 0;
         try { lsSet(K_PL, JSON.stringify(list)); } catch (e) {}
-        if (items.length) { startLoop(); }
+        if (items.length) { startLoop(); } else { showLoading(true); }
       });
     });
   }
+
 
   function showLoading(on) {
     loadingEl.className = on ? "" : "hidden";
