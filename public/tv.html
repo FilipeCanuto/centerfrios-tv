@@ -187,56 +187,118 @@
     });
   }
 
+  function showLoading(on) {
+    loadingEl.className = on ? "" : "hidden";
+    if (on) { mediaEl.innerHTML = ""; }
+  }
+
   function startLoop() {
+    if (!items.length) { showLoading(true); return; }
     playing = true;
+    fails = 0;
     pairEl.className = "hidden";
+    showLoading(false);
     render();
   }
 
   function next() {
-    idx = (idx + 1) % (items.length || 1);
+    if (!items.length) { playing = false; showLoading(true); return; }
+    if (fails >= items.length) {
+      // todos os itens falharam: mostra aviso e tenta de novo em 15s
+      playing = false;
+      showLoading(true);
+      if (timer) { clearTimeout(timer); }
+      timer = setTimeout(function () { fails = 0; startLoop(); }, 15000);
+      return;
+    }
+    idx = (idx + 1) % items.length;
     render();
   }
 
+  function fail() {
+    fails = fails + 1;
+    next();
+  }
+
   function render() {
-    if (!items.length) { return; }
+    if (!items.length) { showLoading(true); return; }
     if (timer) { clearTimeout(timer); timer = null; }
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    pairEl.className = "hidden";
+    showLoading(false);
     var it = items[idx % items.length];
     mediaEl.innerHTML = "";
     if (it.type === "video") {
       var v = document.createElement("video");
-      v.src = it.url;
+      v.preload = "metadata";
+      v.setAttribute("preload", "metadata");
       v.autoplay = true;
       v.muted = true;
       v.setAttribute("muted", "muted");
       v.setAttribute("autoplay", "autoplay");
       v.setAttribute("playsinline", "");
       v.setAttribute("webkit-playsinline", "");
-      v.onended = next;
-      v.onerror = next;
+
+      var handled = false;
+      function clearStall() {
+        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      }
+      function onFail() {
+        if (handled) { return; }
+        handled = true;
+        clearStall();
+        fail();
+      }
+      function onOk() {
+        if (handled) { return; }
+        handled = true;
+        clearStall();
+        fails = 0;
+        next();
+      }
+      if (v.addEventListener) {
+        v.addEventListener("error", onFail, false);
+        v.addEventListener("stalled", function () {}, false);
+        v.addEventListener("ended", onOk, false);
+        v.addEventListener("playing", clearStall, false);
+        v.addEventListener("loadeddata", clearStall, false);
+      } else {
+        v.onerror = onFail;
+        v.onended = onOk;
+      }
+      // timeout de seguranca: 8s sem comecar a carregar/tocar -> pula
+      stallTimer = setTimeout(function () {
+        stallTimer = null;
+        if (!v.readyState || v.readyState < 2) { onFail(); }
+      }, 8000);
+
+      v.src = it.url;
       mediaEl.appendChild(v);
       try { v.play(); } catch (e) {}
-      timer = setTimeout(next, 600000);
+      timer = setTimeout(function () { if (!handled) { handled = true; next(); } }, 600000);
     } else {
       var img = document.createElement("img");
-      img.onerror = next;
+      var imgDone = false;
+      img.onerror = function () { if (!imgDone) { imgDone = true; fail(); } };
+      img.onload = function () { fails = 0; };
       img.src = it.url;
       mediaEl.appendChild(img);
       var secs = it.duration > 2 ? it.duration : 10;
-      timer = setTimeout(next, secs * 1000);
+      timer = setTimeout(function () { if (!imgDone) { imgDone = true; next(); } }, secs * 1000);
     }
-    // pre-buffer do proximo item
+    // pre-buffer leve do proximo item
     if (items.length > 1) {
       var nx = items[(idx + 1) % items.length];
       if (nx.type === "video") {
         var pv = document.createElement("video");
-        pv.src = nx.url;
-        pv.preload = "auto";
+        pv.preload = "metadata";
+        pv.setAttribute("preload", "metadata");
         pv.muted = true;
         pv.style.position = "absolute";
         pv.style.width = "1px";
         pv.style.height = "1px";
         pv.style.opacity = "0.01";
+        pv.src = nx.url;
         mediaEl.appendChild(pv);
       } else {
         var pi = new Image();
@@ -244,6 +306,7 @@
       }
     }
   }
+
 
   boot();
 })();
