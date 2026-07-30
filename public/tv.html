@@ -52,6 +52,7 @@
   var codeEl = document.getElementById("code");
   var mediaEl = document.getElementById("media");
   var statusEl = document.getElementById("status");
+  var loadingEl = document.getElementById("loading");
 
   var tvId = null;
   var items = [];
@@ -59,6 +60,9 @@
   var playing = false;
   var currentPlaylistId = null;
   var timer = null;
+  var stallTimer = null;
+  var fails = 0;
+
 
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
