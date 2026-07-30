@@ -77,7 +77,7 @@ export function TvPlayer() {
       setStatus((s) => (s === "playing" ? s : "pairing"));
       return;
     }
-    const { data, error } = await supabase.from("tvs").select("*").eq("id", id).maybeSingle();
+    const { data, error } = await supabase.from("tvs").select("id,name,is_paired,playlist_id,is_live_active,last_ping,created_at").eq("id", id).maybeSingle();
     if (error || !data) {
       setOffline(true);
       return;
@@ -102,10 +102,10 @@ export function TvPlayer() {
 
     const { data: pl } = await supabase
       .from("playlists")
-      .select("*")
+      .select("id,name,items,created_at")
       .eq("id", playlistId)
       .maybeSingle();
-    const { data: mediaRows } = await supabase.from("media").select("*");
+    const { data: mediaRows } = await supabase.from("media").select("id,title,url,type,duration,created_at");
 
     if (!pl || !mediaRows) {
       const cached = readCache<ResolvedItem[]>(TV_STORAGE.playlist);
