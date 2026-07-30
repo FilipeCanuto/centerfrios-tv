@@ -56,7 +56,7 @@ export function LiveBroadcast() {
       await supabase.from("tvs").update({ is_live_active: true }).in("id", ids);
       setLive(true);
 
-      timerRef.current = setInterval(() => sendFrame(ids), FRAME_INTERVAL_MS);
+      timerRef.current = setInterval(() => sendFrame(), FRAME_INTERVAL_MS);
       toast.success("Transmissão iniciada");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Não foi possível acessar a câmera";
