@@ -12,4 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    // Legacy Smart TV browsers (Philips Saphi / old WebKit) cannot parse modern
+    // JS syntax. Transpiling down to ES2015 avoids the "white screen" crash.
+    build: { target: "es2015" },
+  },
 });
