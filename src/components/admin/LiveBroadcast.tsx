@@ -64,7 +64,7 @@ export function LiveBroadcast() {
     }
   }
 
-  async function sendFrame(ids: string[]) {
+  async function sendFrame() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0) return;
@@ -75,8 +75,7 @@ export function LiveBroadcast() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const frame = canvas.toDataURL("image/jpeg", 0.55);
 
-    const rows = ids.map((id) => ({ tv_id: id, frame_data: frame }));
-    await supabase.from("live_frames").insert(rows);
+    await supabase.from("live_frames").insert({ frame_data: frame });
   }
 
   async function stopLive() {
