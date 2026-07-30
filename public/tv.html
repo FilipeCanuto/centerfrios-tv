@@ -7,24 +7,31 @@
 <style>
   html, body { margin:0; padding:0; width:100%; height:100%; background:#000000; overflow:hidden; font-family: Arial, Helvetica, sans-serif; }
   #stage { position:absolute; top:0; left:0; width:100%; height:100%; background:#000000; }
-  #media img, #media video { position:absolute; top:0; left:0; width:100%; height:100%; }
-  #pair { position:absolute; top:0; left:0; width:100%; height:100%; text-align:center; color:#FFFFFF; }
+  #player-video, #player-img, #live-img {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    object-fit:contain; background:#000000; display:none;
+  }
+  #pair { position:absolute; top:0; left:0; width:100%; height:100%; text-align:center; color:#FFFFFF; background:#000000; }
   #pair img { margin-top:6%; width:38%; }
   .lbl { font-size:28px; margin-top:36px; color:#FFFFFF; }
   #code { font-size:120px; font-weight:bold; color:#FFC700; letter-spacing:14px; margin-top:10px; }
   .inst { font-size:28px; margin-top:20px; color:#FFFFFF; }
   .slogan { font-size:20px; margin-top:40px; color:#FFC700; }
   #status { position:absolute; bottom:10px; right:14px; color:#444444; font-size:14px; }
-  #loading { position:absolute; top:0; left:0; width:100%; height:100%; text-align:center; color:#FFFFFF; }
+  #loading { position:absolute; top:0; left:0; width:100%; height:100%; text-align:center; color:#FFFFFF; background:#000000; }
   #loading img { margin-top:16%; width:30%; opacity:0.85; }
   .loadtxt { font-size:26px; margin-top:40px; color:#FFC700; opacity:0.8; }
+  #livetag { position:absolute; top:18px; left:18px; background:#D32F2F; color:#FFFFFF; font-size:20px; font-weight:bold; padding:6px 14px; display:none; }
   .hidden { display:none; }
-
 </style>
 </head>
 <body>
 <div id="stage">
-  <div id="media"></div>
+  <video id="player-video" muted playsinline webkit-playsinline autoplay style="width:100%; height:100%; object-fit:contain; background:#000; display:none;"></video>
+  <img id="player-img" alt="">
+  <img id="live-img" alt="">
+  <div id="livetag">AO VIVO</div>
+
   <div id="pair">
     <img src="/logo.png" alt="CENTERFRIOS">
     <div class="lbl">C&oacute;digo de pareamento desta TV</div>
@@ -32,12 +39,13 @@
     <div class="inst">Acesse o painel no celular para ativar esta TV</div>
     <div class="slogan">CENTERFRIOS &mdash; Crescendo com voc&ecirc;</div>
   </div>
+
   <div id="loading" class="hidden">
     <img src="/logo.png" alt="CENTERFRIOS">
     <div class="loadtxt">Carregando m&iacute;dias...</div>
   </div>
-  <div id="status"></div>
 
+  <div id="status"></div>
 </div>
 <script type="text/javascript">
 /* CENTERFRIOS TV Player - ES5 puro, sem modulos, compativel com Saphi OS */
@@ -48,11 +56,19 @@
   var K_CODE = "cf_tv_code";
   var K_PL = "cf_playlist_cache";
 
+  var VIDEO_TIMEOUT_MS = 8000;
+  var HEARTBEAT_MS = 8000;
+  var POLL_MS = 3000;
+  var LIVE_MS = 900;
+
   var pairEl = document.getElementById("pair");
   var codeEl = document.getElementById("code");
-  var mediaEl = document.getElementById("media");
   var statusEl = document.getElementById("status");
   var loadingEl = document.getElementById("loading");
+  var videoEl = document.getElementById("player-video");
+  var imgEl = document.getElementById("player-img");
+  var liveEl = document.getElementById("live-img");
+  var liveTag = document.getElementById("livetag");
 
   var tvId = null;
   var items = [];
@@ -62,8 +78,12 @@
   var timer = null;
   var stallTimer = null;
   var fails = 0;
+  var token = 0;
+  var isLive = false;
+  var liveTimer = null;
+  var preloader = new Image();
 
-
+  function show(el, on) { el.style.display = on ? "block" : "none"; }
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
 
@@ -107,36 +127,69 @@
     return c;
   }
 
+  function stopMedia() {
+    token = token + 1;
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    try { videoEl.pause(); } catch (e) {}
+    show(videoEl, false);
+    show(imgEl, false);
+  }
+
   function showPairing(code) {
     codeEl.innerHTML = code;
     pairEl.className = "";
-    if (loadingEl) { loadingEl.className = "hidden"; }
-    mediaEl.innerHTML = "";
+    loadingEl.className = "hidden";
+    stopMedia();
     playing = false;
   }
 
+  function showLoading(on) {
+    loadingEl.className = on ? "" : "hidden";
+    if (on) { stopMedia(); }
+  }
 
+  /* ---------- boot: codigo persistente, nunca duplica TV ---------- */
   function boot() {
     var code = ls(K_CODE);
     if (!code) { code = genCode(); lsSet(K_CODE, code); }
     showPairing(code);
+
     tvId = ls(K_ID);
+    var cached = ls(K_PL);
+    if (cached) {
+      try {
+        var arr = JSON.parse(cached);
+        if (arr && arr.length) { items = arr; }
+      } catch (e) {}
+    }
+
+    if (tvId) {
+      // ja registrada: confirma existencia antes de qualquer insercao
+      req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=id", null, function (err, rows) {
+        if (!err && rows && rows.length) { ready(); } else { registerOnce(code); }
+      });
+    } else {
+      registerOnce(code);
+    }
+  }
+
+  function registerOnce(code) {
+    // register_tv faz upsert pelo codigo: reutiliza o registro existente
     req("POST", "/rest/v1/rpc/register_tv", { _code: code }, function (err, data) {
       if (!err && data && typeof data === "string") {
         tvId = data;
         lsSet(K_ID, data);
       }
-      var cached = ls(K_PL);
-      if (cached) {
-        try {
-          var arr = JSON.parse(cached);
-          if (arr && arr.length) { items = arr; }
-        } catch (e) {}
-      }
-      poll();
-      setInterval(poll, 3000);
-      setInterval(ping, 30000);
+      ready();
     });
+  }
+
+  function ready() {
+    poll();
+    ping();
+    setInterval(poll, POLL_MS);
+    setInterval(ping, HEARTBEAT_MS);
   }
 
   function ping() {
@@ -144,31 +197,63 @@
     req("POST", "/rest/v1/rpc/tv_ping", { _id: tvId }, function () {});
   }
 
+  /* ---------- polling de estado ---------- */
   function poll() {
     if (!tvId) { return; }
     req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=id,is_paired,playlist_id,is_live_active", null, function (err, rows) {
       if (err || !rows || !rows.length) {
         statusEl.innerHTML = "sem conexao";
-        if (!playing && items.length) { startLoop(); }
+        if (!isLive && !playing && items.length) { startLoop(); }
         return;
       }
       statusEl.innerHTML = "";
       var tv = rows[0];
-      if (!tv.is_paired) { showPairing(ls(K_CODE) || ""); return; }
+
+      if (!tv.is_paired) { setLive(false); showPairing(ls(K_CODE) || ""); return; }
+      pairEl.className = "hidden";
+
+      if (tv.is_live_active) { setLive(true); return; }
+      setLive(false);
+
       if (tv.playlist_id !== currentPlaylistId) {
         currentPlaylistId = tv.playlist_id;
-        pairEl.className = "hidden";
         if (!items.length) { showLoading(true); }
         loadPlaylist(tv.playlist_id);
       } else if (!playing && items.length) {
         startLoop();
       } else if (!playing && !items.length) {
-        pairEl.className = "hidden";
         showLoading(true);
       }
     });
   }
 
+  /* ---------- modo ao vivo (quadros base64) ---------- */
+  function setLive(on) {
+    if (on === isLive) { return; }
+    isLive = on;
+    if (on) {
+      stopMedia();
+      playing = false;
+      loadingEl.className = "hidden";
+      liveTag.style.display = "block";
+      fetchFrame();
+      liveTimer = setInterval(fetchFrame, LIVE_MS);
+    } else {
+      if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+      liveTag.style.display = "none";
+      show(liveEl, false);
+    }
+  }
+
+  function fetchFrame() {
+    req("GET", "/rest/v1/live_frames?select=frame_data,created_at&order=created_at.desc&limit=1", null, function (err, rows) {
+      if (err || !rows || !rows.length) { return; }
+      liveEl.src = rows[0].frame_data;
+      show(liveEl, true);
+    });
+  }
+
+  /* ---------- playlist ---------- */
   function loadPlaylist(pid) {
     if (!pid) { showLoading(true); return; }
     req("GET", "/rest/v1/playlists?id=eq." + pid + "&select=id,items", null, function (err, pls) {
@@ -198,28 +283,22 @@
     });
   }
 
-
-  function showLoading(on) {
-    loadingEl.className = on ? "" : "hidden";
-    if (on) { mediaEl.innerHTML = ""; }
-  }
-
   function startLoop() {
+    if (isLive) { return; }
     if (!items.length) { showLoading(true); return; }
     playing = true;
     fails = 0;
     pairEl.className = "hidden";
-    showLoading(false);
+    loadingEl.className = "hidden";
     render();
   }
 
   function next() {
+    if (isLive) { return; }
     if (!items.length) { playing = false; showLoading(true); return; }
     if (fails >= items.length) {
-      // todos os itens falharam: mostra aviso e tenta de novo em 15s
       playing = false;
       showLoading(true);
-      if (timer) { clearTimeout(timer); }
       timer = setTimeout(function () { fails = 0; startLoop(); }, 15000);
       return;
     }
@@ -233,92 +312,90 @@
   }
 
   function render() {
+    if (isLive) { return; }
     if (!items.length) { showLoading(true); return; }
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+
+    stopMedia();
+    var my = token;
     pairEl.className = "hidden";
-    showLoading(false);
+    loadingEl.className = "hidden";
+
     var it = items[idx % items.length];
-    mediaEl.innerHTML = "";
+
     if (it.type === "video") {
-      var v = document.createElement("video");
-      v.preload = "metadata";
-      v.setAttribute("preload", "metadata");
-      v.autoplay = true;
-      v.muted = true;
-      v.setAttribute("muted", "muted");
-      v.setAttribute("autoplay", "autoplay");
-      v.setAttribute("playsinline", "");
-      v.setAttribute("webkit-playsinline", "");
+      show(imgEl, false);
+      show(videoEl, true);
+
+      videoEl.muted = true;
+      videoEl.setAttribute("muted", "");
+      videoEl.setAttribute("playsinline", "");
+      videoEl.setAttribute("webkit-playsinline", "");
+      videoEl.setAttribute("preload", "metadata");
+      videoEl.preload = "metadata";
 
       var handled = false;
-      function clearStall() {
+      function finishVideo(ok) {
+        if (handled || my !== token) { return; }
+        handled = true;
         if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+        if (ok) { fails = 0; next(); } else { show(videoEl, false); fail(); }
       }
-      function onFail() {
-        if (handled) { return; }
-        handled = true;
-        clearStall();
-        fail();
-      }
-      function onOk() {
-        if (handled) { return; }
-        handled = true;
-        clearStall();
-        fails = 0;
-        next();
-      }
-      if (v.addEventListener) {
-        v.addEventListener("error", onFail, false);
-        v.addEventListener("stalled", function () {}, false);
-        v.addEventListener("ended", onOk, false);
-        v.addEventListener("playing", clearStall, false);
-        v.addEventListener("loadeddata", clearStall, false);
-      } else {
-        v.onerror = onFail;
-        v.onended = onOk;
-      }
-      // timeout de seguranca: 8s sem comecar a carregar/tocar -> pula
+      videoEl.onerror = function () { finishVideo(false); };
+      videoEl.onended = function () { finishVideo(true); };
+      videoEl.onplaying = function () {
+        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      };
+      videoEl.onloadeddata = function () {
+        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      };
+
+      // timeout de seguranca de 8s: sem buffer -> pula
       stallTimer = setTimeout(function () {
         stallTimer = null;
-        if (!v.readyState || v.readyState < 2) { onFail(); }
-      }, 8000);
+        if (my !== token) { return; }
+        if (!videoEl.readyState || videoEl.readyState < 2) { finishVideo(false); }
+      }, VIDEO_TIMEOUT_MS);
 
-      v.src = it.url;
-      mediaEl.appendChild(v);
-      try { v.play(); } catch (e) {}
-      timer = setTimeout(function () { if (!handled) { handled = true; next(); } }, 600000);
+      try { videoEl.src = it.url; } catch (e) {}
+      try { videoEl.load(); } catch (e) {}
+      try { videoEl.currentTime = 0; } catch (e) {}
+      try {
+        var pr = videoEl.play();
+        if (pr && typeof pr["catch"] === "function") {
+          pr["catch"](function () { finishVideo(false); });
+        }
+      } catch (e) { finishVideo(false); }
+
+      // limite absoluto: 10 min por video
+      timer = setTimeout(function () { finishVideo(true); }, 600000);
     } else {
-      var img = document.createElement("img");
+      show(videoEl, false);
+      show(imgEl, true);
       var imgDone = false;
-      img.onerror = function () { if (!imgDone) { imgDone = true; fail(); } };
-      img.onload = function () { fails = 0; };
-      img.src = it.url;
-      mediaEl.appendChild(img);
+      imgEl.onerror = function () {
+        if (imgDone || my !== token) { return; }
+        imgDone = true;
+        show(imgEl, false);
+        fail();
+      };
+      imgEl.onload = function () { fails = 0; };
+      imgEl.src = it.url;
       var secs = it.duration > 2 ? it.duration : 10;
-      timer = setTimeout(function () { if (!imgDone) { imgDone = true; next(); } }, secs * 1000);
+      timer = setTimeout(function () {
+        if (imgDone || my !== token) { return; }
+        imgDone = true;
+        next();
+      }, secs * 1000);
     }
-    // pre-buffer leve do proximo item
+
+    // pre-buffer leve do proximo item (somente imagens; video pesa RAM)
     if (items.length > 1) {
       var nx = items[(idx + 1) % items.length];
-      if (nx.type === "video") {
-        var pv = document.createElement("video");
-        pv.preload = "metadata";
-        pv.setAttribute("preload", "metadata");
-        pv.muted = true;
-        pv.style.position = "absolute";
-        pv.style.width = "1px";
-        pv.style.height = "1px";
-        pv.style.opacity = "0.01";
-        pv.src = nx.url;
-        mediaEl.appendChild(pv);
-      } else {
-        var pi = new Image();
-        pi.src = nx.url;
+      if (nx.type !== "video") {
+        try { preloader.src = nx.url; } catch (e) {}
       }
     }
   }
-
 
   boot();
 })();

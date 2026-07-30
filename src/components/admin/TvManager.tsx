@@ -4,7 +4,6 @@ import { isOnline, type TvRow } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -12,8 +11,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Trash2, Tv } from "lucide-react";
+import { Trash2, Tv, Plus, KeyRound } from "lucide-react";
 
 export function TvManager() {
   const [tvs, setTvs] = useState<TvRow[]>([]);
@@ -21,6 +30,7 @@ export function TvManager() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<TvRow | null>(null);
 
   async function load() {
     const [{ data: t }, { data: p }] = await Promise.all([
@@ -37,7 +47,7 @@ export function TvManager() {
       .channel("admin-tvs")
       .on("postgres_changes", { event: "*", schema: "public", table: "tvs" }, () => load())
       .subscribe();
-    const interval = setInterval(load, 30000);
+    const interval = setInterval(load, 15000);
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
@@ -83,21 +93,36 @@ export function TvManager() {
     await supabase.from("tvs").update({ name: value }).eq("id", tvId);
   }
 
-  async function remove(tvId: string) {
-    if (!window.confirm("Remover esta TV?")) return;
-    const { error } = await supabase.from("tvs").delete().eq("id", tvId);
+  async function confirmRemove() {
+    if (!pendingDelete) return;
+    const { error } = await supabase.from("tvs").delete().eq("id", pendingDelete.id);
+    setPendingDelete(null);
     if (error) {
       toast.error("Não foi possível remover");
       return;
     }
+    toast.success("TV removida");
     load();
   }
 
+  const onlineCount = tvs.filter((t) => isOnline(t.last_ping)).length;
+
   return (
-    <div className="space-y-4">
-      <Card className="p-4">
-        <h3 className="font-bold">Parear nova TV</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[140px_1fr_auto] sm:items-end">
+    <div className="space-y-5">
+      <section className="cf-card p-5">
+        <div className="flex items-center gap-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+            <KeyRound className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-extrabold">Parear nova TV</h3>
+            <p className="text-xs text-muted-foreground">
+              Digite o código exibido na tela do player.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-[150px_1fr_auto] sm:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="code">Código</Label>
             <Input
@@ -107,7 +132,7 @@ export function TvManager() {
               placeholder="000000"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              className="text-center text-lg font-bold tracking-widest"
+              className="h-11 rounded-xl text-center text-lg font-extrabold tracking-[0.35em]"
             />
           </div>
           <div className="space-y-1.5">
@@ -117,64 +142,93 @@ export function TvManager() {
               placeholder="TV Vitrine — Filial Tabuleiro"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="h-11 rounded-xl"
             />
           </div>
-          <Button onClick={pair} disabled={busy} className="font-bold">
-            Parear
+          <Button onClick={pair} disabled={busy} className="h-11 rounded-xl px-6 font-bold">
+            <Plus className="mr-1.5 h-4 w-4" /> Parear
           </Button>
         </div>
-      </Card>
+      </section>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">
+          Telas cadastradas
+        </h3>
+        <span className="text-xs font-semibold text-muted-foreground">
+          {onlineCount} de {tvs.length} online
+        </span>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         {tvs.map((tv) => {
           const online = isOnline(tv.last_ping);
           return (
-            <Card key={tv.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
+            <article key={tv.id} className="cf-card p-5">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
                 <div className="flex min-w-0 items-center gap-2">
-                  <Tv className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+                    <Tv className="h-4 w-4" />
+                  </span>
                   <Input
                     defaultValue={tv.name}
                     onBlur={(e) => rename(tv.id, e.target.value)}
-                    className="h-8 border-transparent px-1 font-semibold hover:border-input"
+                    className="h-9 rounded-lg border-transparent bg-transparent px-1.5 text-base font-bold hover:border-input focus-visible:border-input"
                   />
                 </div>
-                <Button size="icon" variant="ghost" onClick={() => remove(tv.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Remover TV"
+                  className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setPendingDelete(tv)}
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span
                   className={
-                    "rounded-full px-2 py-1 font-bold " +
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold " +
                     (online
-                      ? "bg-success text-success-foreground"
+                      ? "bg-success/12 text-success"
                       : "bg-muted text-muted-foreground")
                   }
                 >
+                  <span
+                    className={
+                      online ? "cf-dot-online h-2 w-2" : "h-2 w-2 rounded-full bg-muted-foreground/60"
+                    }
+                  />
                   {online ? "Online" : "Offline"}
                 </span>
-                <span className="rounded-full bg-secondary px-2 py-1 font-semibold text-secondary-foreground">
-                  Código {tv.pairing_code}
-                </span>
                 {tv.is_live_active ? (
-                  <span className="rounded-full bg-destructive px-2 py-1 font-bold text-destructive-foreground">
-                    AO VIVO
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive px-2.5 py-1 text-xs font-bold text-destructive-foreground">
+                    <span className="h-2 w-2 rounded-full bg-destructive-foreground" /> AO VIVO
                   </span>
                 ) : null}
               </div>
 
-              <div className="mt-3 space-y-1.5">
-                <Label>Playlist</Label>
+              <div className="mt-4 rounded-xl border border-dashed border-primary/25 bg-secondary/60 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Código de pareamento
+                </p>
+                <p className="mt-0.5 font-mono text-xl font-extrabold tracking-[0.3em] text-primary">
+                  {tv.pairing_code}
+                </p>
+              </div>
+
+              <div className="mt-4 space-y-1.5">
+                <Label>Playlist vinculada</Label>
                 <Select
                   value={tv.playlist_id || "none"}
                   onValueChange={(v) => setPlaylist(tv.id, v)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11 rounded-xl">
                     <SelectValue placeholder="Selecionar playlist" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-xl">
                     <SelectItem value="none">Sem playlist</SelectItem>
                     {playlists.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
@@ -184,15 +238,42 @@ export function TvManager() {
                   </SelectContent>
                 </Select>
               </div>
-            </Card>
+            </article>
           );
         })}
         {tvs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhuma TV registrada. Abra o player na TV para gerar o código.
-          </p>
+          <div className="cf-card p-6 text-center sm:col-span-2">
+            <Tv className="mx-auto h-8 w-8 text-muted-foreground/60" />
+            <p className="mt-2 text-sm font-semibold">Nenhuma TV registrada</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Abra o player na TV para gerar o código de pareamento.
+            </p>
+          </div>
         ) : null}
       </div>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => (!open ? setPendingDelete(null) : null)}
+      >
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover “{pendingDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A tela deixará de exibir conteúdo e voltará à tela de pareamento.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRemove}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
