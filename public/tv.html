@@ -110,9 +110,11 @@
   function showPairing(code) {
     codeEl.innerHTML = code;
     pairEl.className = "";
+    if (loadingEl) { loadingEl.className = "hidden"; }
     mediaEl.innerHTML = "";
     playing = false;
   }
+
 
   function boot() {
     var code = ls(K_CODE);
