@@ -95,7 +95,8 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
 
   async function patchTv(tvId: string, changes: Record<string, unknown>, message?: string) {
     setTvs((prev) => prev.map((t) => (t.id === tvId ? ({ ...t, ...changes } as TvRow) : t)));
-    const { error } = await supabase.from("tvs").update(changes).eq("id", tvId);
+    const { error } = await supabase.from("tvs").update(changes as never).eq("id", tvId);
+
     if (error) {
       toast.error("Falha ao aplicar a alteração");
       load();
