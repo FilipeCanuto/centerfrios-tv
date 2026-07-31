@@ -256,6 +256,10 @@ export type Database = {
         }
         Returns: string
       }
+      tv_heartbeat: {
+        Args: { _id: string; _memory?: string; _resolution?: string }
+        Returns: undefined
+      }
       tv_ping: { Args: { _id: string }; Returns: undefined }
     }
     Enums: {
