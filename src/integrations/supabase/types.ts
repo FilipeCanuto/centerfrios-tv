@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      event_photos: {
+        Row: {
+          created_at: string
+          device_hash: string | null
+          featured: boolean
+          id: string
+          image_url: string
+          status: string
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          device_hash?: string | null
+          featured?: boolean
+          id?: string
+          image_url: string
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          device_hash?: string | null
+          featured?: boolean
+          id?: string
+          image_url?: string
+          status?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       live_frames: {
         Row: {
           created_at: string
@@ -89,39 +122,87 @@ export type Database = {
         }
         Relationships: []
       }
-      tvs: {
+      tv_alerts: {
         Row: {
           created_at: string
+          expires_at: string
+          id: string
+          message: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          message: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          message?: string
+        }
+        Relationships: []
+      }
+      tvs: {
+        Row: {
+          command: Json | null
+          created_at: string
+          event_mode: boolean
           id: string
           is_live_active: boolean
           is_paired: boolean
           last_ping: string | null
+          layout_mode: string
           live_stream_url: string | null
+          memory_usage: string | null
+          muted: boolean
           name: string
+          orientation: string
           pairing_code: string
           playlist_id: string | null
+          qr_url: string | null
+          screen_resolution: string | null
+          ticker_text: string | null
         }
         Insert: {
+          command?: Json | null
           created_at?: string
+          event_mode?: boolean
           id?: string
           is_live_active?: boolean
           is_paired?: boolean
           last_ping?: string | null
+          layout_mode?: string
           live_stream_url?: string | null
+          memory_usage?: string | null
+          muted?: boolean
           name?: string
+          orientation?: string
           pairing_code: string
           playlist_id?: string | null
+          qr_url?: string | null
+          screen_resolution?: string | null
+          ticker_text?: string | null
         }
         Update: {
+          command?: Json | null
           created_at?: string
+          event_mode?: boolean
           id?: string
           is_live_active?: boolean
           is_paired?: boolean
           last_ping?: string | null
+          layout_mode?: string
           live_stream_url?: string | null
+          memory_usage?: string | null
+          muted?: boolean
           name?: string
+          orientation?: string
           pairing_code?: string
           playlist_id?: string | null
+          qr_url?: string | null
+          screen_resolution?: string | null
+          ticker_text?: string | null
         }
         Relationships: [
           {
@@ -167,6 +248,14 @@ export type Database = {
         Returns: boolean
       }
       register_tv: { Args: { _code: string }; Returns: string }
+      submit_event_photo: {
+        Args: {
+          _device_hash: string
+          _image_url: string
+          _storage_path: string
+        }
+        Returns: string
+      }
       tv_ping: { Args: { _id: string }; Returns: undefined }
     }
     Enums: {
