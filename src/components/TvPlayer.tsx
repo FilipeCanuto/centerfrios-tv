@@ -297,7 +297,8 @@ export function TvPlayer() {
       const perf = performance as unknown as { memory?: { usedJSHeapSize: number } };
       const memory = perf.memory
         ? Math.round(perf.memory.usedJSHeapSize / (1024 * 1024)) + " MB"
-        : null;
+        : undefined;
+
       supabase
         .rpc("tv_heartbeat", {
           _id: id,
