@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { isOnline, type TvRow } from "@/lib/centerfrios";
+import { isOnline, makeNonce, type TvRow } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -22,9 +23,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Trash2, Tv, Plus, KeyRound } from "lucide-react";
+import {
+  Trash2,
+  Tv,
+  Plus,
+  KeyRound,
+  RefreshCw,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  MonitorSmartphone,
+  LayoutGrid,
+  Maximize,
+  Cpu,
+  MonitorCheck,
+} from "lucide-react";
 
-export function TvManager() {
+export function TvManager({ onChanged }: { onChanged?: () => void }) {
   const [tvs, setTvs] = useState<TvRow[]>([]);
   const [playlists, setPlaylists] = useState<{ id: string; name: string }[]>([]);
   const [code, setCode] = useState("");
@@ -39,6 +54,7 @@ export function TvManager() {
     ]);
     setTvs((t || []) as unknown as TvRow[]);
     setPlaylists((p || []) as unknown as { id: string; name: string }[]);
+    if (onChanged) onChanged();
   }
 
   useEffect(() => {
@@ -52,6 +68,7 @@ export function TvManager() {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function pair() {
@@ -76,17 +93,29 @@ export function TvManager() {
     load();
   }
 
-  async function setPlaylist(tvId: string, playlistId: string) {
-    const { error } = await supabase
-      .from("tvs")
-      .update({ playlist_id: playlistId === "none" ? null : playlistId })
-      .eq("id", tvId);
+  async function patchTv(tvId: string, changes: Record<string, unknown>, message?: string) {
+    setTvs((prev) => prev.map((t) => (t.id === tvId ? ({ ...t, ...changes } as TvRow) : t)));
+    const { error } = await supabase.from("tvs").update(changes as never).eq("id", tvId);
+
     if (error) {
-      toast.error("Falha ao vincular playlist");
+      toast.error("Falha ao aplicar a alteração");
+      load();
       return;
     }
-    toast.success("Playlist vinculada");
-    load();
+    if (message) toast.success(message);
+  }
+
+  function sendCommand(tv: TvRow, action: "reload" | "mute" | "unmute" | "sync") {
+    const labels: Record<string, string> = {
+      reload: "Reiniciando o player…",
+      mute: "Som desativado na TV",
+      unmute: "Som ativado na TV",
+      sync: "Sincronização forçada",
+    };
+    const changes: Record<string, unknown> = { command: { action, nonce: makeNonce() } };
+    if (action === "mute") changes.muted = true;
+    if (action === "unmute") changes.muted = false;
+    patchTv(tv.id, changes, labels[action]);
   }
 
   async function rename(tvId: string, value: string) {
@@ -191,9 +220,7 @@ export function TvManager() {
                 <span
                   className={
                     "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold " +
-                    (online
-                      ? "bg-success/12 text-success"
-                      : "bg-muted text-muted-foreground")
+                    (online ? "bg-success/12 text-success" : "bg-muted text-muted-foreground")
                   }
                 >
                   <span
@@ -203,6 +230,21 @@ export function TvManager() {
                   />
                   {online ? "Online" : "Offline"}
                 </span>
+                {tv.last_ping ? (
+                  <span className="text-[11px] font-semibold text-muted-foreground">
+                    ping {new Date(tv.last_ping).toLocaleTimeString("pt-BR")}
+                  </span>
+                ) : null}
+                {tv.screen_resolution ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold text-secondary-foreground">
+                    <MonitorCheck className="h-3 w-3" /> {tv.screen_resolution}
+                  </span>
+                ) : null}
+                {tv.memory_usage ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                    <Cpu className="h-3 w-3" /> {tv.memory_usage}
+                  </span>
+                ) : null}
                 {tv.is_live_active ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive px-2.5 py-1 text-xs font-bold text-destructive-foreground">
                     <span className="h-2 w-2 rounded-full bg-destructive-foreground" /> AO VIVO
@@ -223,7 +265,9 @@ export function TvManager() {
                 <Label>Playlist vinculada</Label>
                 <Select
                   value={tv.playlist_id || "none"}
-                  onValueChange={(v) => setPlaylist(tv.id, v)}
+                  onValueChange={(v) =>
+                    patchTv(tv.id, { playlist_id: v === "none" ? null : v }, "Playlist vinculada")
+                  }
                 >
                   <SelectTrigger className="h-11 rounded-xl">
                     <SelectValue placeholder="Selecionar playlist" />
@@ -237,6 +281,131 @@ export function TvManager() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Layout</Label>
+                  <div className="flex gap-1 rounded-xl bg-secondary p-1">
+                    {([
+                      ["fullscreen", "Tela cheia", Maximize],
+                      ["multizone", "Multi-zona", LayoutGrid],
+                    ] as const).map(([value, label, Icon]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => patchTv(tv.id, { layout_mode: value })}
+                        className={
+                          "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors " +
+                          (tv.layout_mode === value
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-primary")
+                        }
+                      >
+                        <Icon className="h-3.5 w-3.5" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Orientação</Label>
+                  <div className="flex gap-1 rounded-xl bg-secondary p-1">
+                    {([
+                      ["landscape", "16:9"],
+                      ["portrait", "9:16"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => patchTv(tv.id, { orientation: value })}
+                        className={
+                          "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors " +
+                          (tv.orientation === value
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-primary")
+                        }
+                      >
+                        <MonitorSmartphone className="h-3.5 w-3.5" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {tv.layout_mode === "multizone" ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs" htmlFor={"ticker-" + tv.id}>
+                      Texto do rodapé (ticker)
+                    </Label>
+                    <Input
+                      id={"ticker-" + tv.id}
+                      defaultValue={tv.ticker_text || ""}
+                      placeholder="Ofertas da semana em climatização!"
+                      onBlur={(e) => patchTv(tv.id, { ticker_text: e.target.value || null })}
+                      className="h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs" htmlFor={"qr-" + tv.id}>
+                      Link do QR code
+                    </Label>
+                    <Input
+                      id={"qr-" + tv.id}
+                      defaultValue={tv.qr_url || ""}
+                      placeholder="https://instagram.com/centerfrios"
+                      onBlur={(e) => patchTv(tv.id, { qr_url: e.target.value || null })}
+                      className="h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                <Label htmlFor={"event-" + tv.id} className="text-xs font-bold">
+                  Exibir mural de eventos
+                </Label>
+                <Switch
+                  id={"event-" + tv.id}
+                  checked={tv.event_mode}
+                  onCheckedChange={(v) => patchTv(tv.id, { event_mode: v })}
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl font-bold"
+                  onClick={() => sendCommand(tv, "reload")}
+                >
+                  <RotateCcw className="mr-1.5 h-4 w-4" /> Reiniciar player
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl font-bold"
+                  onClick={() => sendCommand(tv, tv.muted ? "unmute" : "mute")}
+                >
+                  {tv.muted ? (
+                    <>
+                      <Volume2 className="mr-1.5 h-4 w-4" /> Ativar som
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="mr-1.5 h-4 w-4" /> Mudo
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl font-bold"
+                  onClick={() => sendCommand(tv, "sync")}
+                >
+                  <RefreshCw className="mr-1.5 h-4 w-4" /> Forçar sincronização
+                </Button>
               </div>
             </article>
           );

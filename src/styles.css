@@ -229,3 +229,29 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
+
+/* TV player: crossfade + ticker */
+@keyframes cf-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cf-ticker-scroll {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.cf-ticker {
+  white-space: nowrap;
+  will-change: transform;
+  animation: cf-ticker-scroll 26s linear infinite;
+}
+
