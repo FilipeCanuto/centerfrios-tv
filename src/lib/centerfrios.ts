@@ -33,6 +33,11 @@ export type PlaylistRow = {
   created_at: string;
 };
 
+export type TvCommand = {
+  action: "reload" | "mute" | "unmute" | "sync";
+  nonce: string;
+};
+
 export type TvRow = {
   id: string;
   name: string;
@@ -43,6 +48,31 @@ export type TvRow = {
   live_stream_url: string | null;
   last_ping: string | null;
   created_at: string;
+  orientation: string;
+  layout_mode: string;
+  muted: boolean;
+  ticker_text: string | null;
+  qr_url: string | null;
+  screen_resolution: string | null;
+  memory_usage: string | null;
+  command: TvCommand | null;
+  event_mode: boolean;
+};
+
+export type EventPhoto = {
+  id: string;
+  image_url: string;
+  storage_path: string | null;
+  status: string;
+  featured: boolean;
+  created_at: string;
+};
+
+export type TvAlert = {
+  id: string;
+  message: string;
+  expires_at: string;
+  created_at: string;
 };
 
 export type ResolvedItem = {
@@ -52,6 +82,23 @@ export type ResolvedItem = {
   duration: number;
   title: string;
 };
+
+export const TV_SELECT_COLUMNS =
+  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode";
+
+export function makeNonce(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const min = Math.floor(s / 60);
+  const sec = s % 60;
+  if (min === 0) return sec + " seg";
+  if (sec === 0) return min + " min";
+  return min + " min e " + sec + " seg";
+}
+
 
 export function generatePairingCode(): string {
   var code = "";
