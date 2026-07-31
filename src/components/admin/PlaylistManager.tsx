@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { parsePlaylistItems, type MediaRow, type PlaylistItem } from "@/lib/centerfrios";
+import {
+  formatDuration,
+  parsePlaylistItems,
+  type MediaRow,
+  type PlaylistItem,
+} from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +18,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, Plus, Trash2, ListVideo, Film, ImageIcon } from "lucide-react";
+import { Plus, Trash2, ListVideo, Film, ImageIcon, GripVertical, Play, Clock } from "lucide-react";
 
-type PlaylistState = {
-  id: string;
-  name: string;
-  items: PlaylistItem[];
-};
+type PlaylistState = { id: string; name: string; items: PlaylistItem[] };
 
 export function PlaylistManager() {
   const [playlists, setPlaylists] = useState<PlaylistState[]>([]);
@@ -29,6 +47,12 @@ export function PlaylistManager() {
   const [newName, setNewName] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   async function load() {
     const [{ data: pls }, { data: ms }] = await Promise.all([
@@ -40,15 +64,32 @@ export function PlaylistManager() {
     );
     setPlaylists(parsed);
     setMedia((ms || []) as unknown as MediaRow[]);
-    if (!selected && parsed.length) setSelected(parsed[0].id);
+    setSelected((cur) => cur || (parsed.length ? parsed[0].id : null));
   }
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const current = playlists.find((p) => p.id === selected) || null;
+
+  const byId = useMemo(() => {
+    const map: Record<string, MediaRow> = {};
+    media.forEach((m) => {
+      map[m.id] = m;
+    });
+    return map;
+  }, [media]);
+
+  const totalSeconds = useMemo(() => {
+    if (!current) return 0;
+    return current.items.reduce((acc, it) => {
+      const m = byId[it.media_id];
+      if (!m) return acc;
+      if (m.type === "video") return acc + (it.custom_duration || m.duration || 30);
+      return acc + (it.custom_duration || m.duration || 10);
+    }, 0);
+  }, [current, byId]);
 
   async function createPlaylist() {
     if (!newName.trim()) return;
@@ -69,50 +110,47 @@ export function PlaylistManager() {
 
   async function persist(items: PlaylistItem[]) {
     if (!current) return;
-    setPlaylists((prev) => prev.map((p) => (p.id === current.id ? { ...p, items } : p)));
+    const ordered = items.map((it, i) => ({ ...it, order: i }));
+    setPlaylists((prev) => prev.map((p) => (p.id === current.id ? { ...p, items: ordered } : p)));
     const { error } = await supabase
       .from("playlists")
-      .update({ items: items as unknown as never })
+      .update({ items: ordered as unknown as never })
       .eq("id", current.id);
     if (error) toast.error("Falha ao salvar a playlist");
   }
 
-  function reorder(items: PlaylistItem[]): PlaylistItem[] {
-    return items.map((it, i) => ({ ...it, order: i }));
-  }
-
   function addMedia(mediaId: string) {
     if (!current) return;
-    const items = current.items.concat([
-      { media_id: mediaId, order: current.items.length, custom_duration: null },
-    ]);
-    persist(reorder(items));
-  }
-
-  function move(index: number, delta: number) {
-    if (!current) return;
-    const items = current.items.slice();
-    const target = index + delta;
-    if (target < 0 || target >= items.length) return;
-    const tmp = items[index];
-    items[index] = items[target];
-    items[target] = tmp;
-    persist(reorder(items));
+    persist(
+      current.items.concat([
+        { media_id: mediaId, order: current.items.length, custom_duration: null },
+      ]),
+    );
   }
 
   function removeAt(index: number) {
     if (!current) return;
     const items = current.items.slice();
     items.splice(index, 1);
-    persist(reorder(items));
+    persist(items);
   }
 
-  function setDurationAt(index: number, value: string) {
+  function setDurationAt(index: number, value: number | null) {
     if (!current) return;
     const items = current.items.slice();
-    const num = parseInt(value, 10);
-    items[index] = { ...items[index], custom_duration: isNaN(num) ? null : num };
+    items[index] = { ...items[index], custom_duration: value };
     persist(items);
+  }
+
+  function onDragEnd(event: DragEndEvent) {
+    if (!current) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = current.items.map((it, i) => it.media_id + "#" + i);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    persist(arrayMove(current.items, from, to));
   }
 
   async function removePlaylist() {
@@ -127,11 +165,6 @@ export function PlaylistManager() {
     load();
   }
 
-  const byId: Record<string, MediaRow> = {};
-  media.forEach((m) => {
-    byId[m.id] = m;
-  });
-
   return (
     <div className="space-y-5">
       <section className="cf-card p-5">
@@ -142,7 +175,7 @@ export function PlaylistManager() {
           <div className="min-w-0">
             <h3 className="text-base font-extrabold">Nova playlist</h3>
             <p className="text-xs text-muted-foreground">
-              Agrupe mídias e defina a sequência de exibição.
+              Agrupe mídias, arraste para reordenar e defina a duração de cada item.
             </p>
           </div>
         </div>
@@ -188,89 +221,58 @@ export function PlaylistManager() {
           <section className="cf-card p-5">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
               <h3 className="truncate text-base font-extrabold">{current.name}</h3>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setConfirmDelete(true)}
-                className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Trash2 className="mr-1.5 h-4 w-4" /> Excluir
-              </Button>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-lg font-bold"
+                  disabled={current.items.length === 0}
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  <Play className="mr-1.5 h-4 w-4" /> Pré-visualizar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
-            <ul className="mt-4 space-y-2">
-              {current.items.map((it, i) => {
-                const m = byId[it.media_id];
-                return (
-                  <li
-                    key={it.media_id + "-" + i}
-                    className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 p-2"
-                  >
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary text-xs font-extrabold text-primary-foreground">
-                      {i + 1}
-                    </span>
-                    {m ? (
-                      <span className="h-9 w-14 shrink-0 overflow-hidden rounded-lg bg-foreground/90">
-                        {m.type === "image" ? (
-                          <img src={m.url} alt="" className="h-full w-full object-contain" />
-                        ) : (
-                          <video src={m.url} muted className="h-full w-full object-contain" />
-                        )}
-                      </span>
-                    ) : null}
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                      {m ? m.title : "Mídia removida"}
-                    </span>
-                    {m && m.type === "image" ? (
-                      <Input
-                        type="number"
-                        min={3}
-                        aria-label="Duração em segundos"
-                        className="h-8 w-16 rounded-lg"
-                        value={it.custom_duration ?? m.duration}
-                        onChange={(e) => setDurationAt(i, e.target.value)}
-                      />
-                    ) : (
-                      <span className="text-xs font-semibold text-muted-foreground">vídeo</span>
-                    )}
-                    <div className="flex shrink-0">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Subir"
-                        className="h-8 w-8 rounded-lg"
-                        onClick={() => move(i, -1)}
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Descer"
-                        className="h-8 w-8 rounded-lg"
-                        onClick={() => move(i, 1)}
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Remover da playlist"
-                        className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => removeAt(i)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-              {current.items.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-                  Adicione mídias da galeria ao lado.
-                </p>
-              ) : null}
-            </ul>
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-extrabold text-accent-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              Duração total: {formatDuration(totalSeconds)}
+            </p>
+
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <SortableContext
+                items={current.items.map((it, i) => it.media_id + "#" + i)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul className="mt-4 space-y-2">
+                  {current.items.map((it, i) => (
+                    <SortableRow
+                      key={it.media_id + "#" + i}
+                      id={it.media_id + "#" + i}
+                      index={i}
+                      item={it}
+                      media={byId[it.media_id]}
+                      onDuration={(v) => setDurationAt(i, v)}
+                      onRemove={() => removeAt(i)}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
+
+            {current.items.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                Adicione mídias da galeria ao lado.
+              </p>
+            ) : null}
           </section>
 
           <section className="cf-card p-5">
@@ -318,6 +320,13 @@ export function PlaylistManager() {
         </div>
       ) : null}
 
+      <PlaylistPreview
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        name={current?.name || ""}
+        items={(current?.items || []).map((it) => ({ item: it, media: byId[it.media_id] }))}
+      />
+
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
@@ -338,5 +347,159 @@ export function PlaylistManager() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function SortableRow({
+  id,
+  index,
+  item,
+  media,
+  onDuration,
+  onRemove,
+}: {
+  id: string;
+  index: number;
+  item: PlaylistItem;
+  media?: MediaRow;
+  onDuration: (value: number | null) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={
+        "flex items-center gap-2 rounded-xl border bg-secondary/40 p-2 " +
+        (isDragging ? "border-primary shadow-lg" : "border-border")
+      }
+    >
+      <button
+        type="button"
+        aria-label="Arrastar para reordenar"
+        className="shrink-0 cursor-grab touch-none rounded-lg p-1 text-muted-foreground hover:text-primary active:cursor-grabbing"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary text-xs font-extrabold text-primary-foreground">
+        {index + 1}
+      </span>
+      {media ? (
+        <span className="h-9 w-14 shrink-0 overflow-hidden rounded-lg bg-foreground/90">
+          {media.type === "image" ? (
+            <img src={media.url} alt="" className="h-full w-full object-contain" />
+          ) : (
+            <video src={media.url} muted className="h-full w-full object-contain" />
+          )}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+        {media ? media.title : "Mídia removida"}
+      </span>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {[5, 10, 30].map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            onClick={() => onDuration(preset)}
+            className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-bold text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+          >
+            {preset}s
+          </button>
+        ))}
+        <Input
+          type="number"
+          min={1}
+          aria-label="Duração em segundos"
+          className="h-8 w-16 rounded-lg"
+          value={item.custom_duration ?? media?.duration ?? 10}
+          onChange={(e) => {
+            const num = parseInt(e.target.value, 10);
+            onDuration(isNaN(num) ? null : num);
+          }}
+        />
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Remover da playlist"
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          onClick={onRemove}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+function PlaylistPreview({
+  open,
+  onOpenChange,
+  name,
+  items,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  name: string;
+  items: { item: PlaylistItem; media?: MediaRow }[];
+}) {
+  const [i, setI] = useState(0);
+  const valid = items.filter((x) => !!x.media);
+  const currentEntry = valid.length ? valid[i % valid.length] : null;
+
+  useEffect(() => {
+    if (!open) setI(0);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !currentEntry || !currentEntry.media) return;
+    if (currentEntry.media.type === "video") return;
+    const secs =
+      currentEntry.item.custom_duration || currentEntry.media.duration || 10;
+    const t = setTimeout(() => setI((v) => v + 1), Math.max(1, secs) * 1000);
+    return () => clearTimeout(t);
+  }, [open, i, currentEntry]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl rounded-2xl">
+        <DialogHeader>
+          <DialogTitle>Pré-visualização — {name}</DialogTitle>
+        </DialogHeader>
+        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+          {currentEntry && currentEntry.media ? (
+            currentEntry.media.type === "video" ? (
+              <video
+                key={currentEntry.media.id + "-" + i}
+                src={currentEntry.media.url}
+                autoPlay
+                muted
+                playsInline
+                onEnded={() => setI((v) => v + 1)}
+                onError={() => setI((v) => v + 1)}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <img
+                key={currentEntry.media.id + "-" + i}
+                src={currentEntry.media.url}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            )
+          ) : null}
+        </div>
+        <p className="text-center text-xs font-semibold text-muted-foreground">
+          Item {valid.length ? (i % valid.length) + 1 : 0} de {valid.length}
+        </p>
+      </DialogContent>
+    </Dialog>
   );
 }
