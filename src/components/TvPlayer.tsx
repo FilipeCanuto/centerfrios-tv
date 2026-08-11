@@ -589,6 +589,27 @@ export function TvPlayer() {
         </>
       ) : null}
 
+      {!multizone && current.qr_url && qrDataUrl ? (
+        <div
+          style={{
+            position: "absolute",
+            right: "24px",
+            bottom: "24px",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            backgroundColor: "rgba(10,57,129,0.9)",
+            borderRadius: "16px",
+            padding: "12px 16px",
+          }}
+        >
+          <img src={qrDataUrl} alt="QR code" style={{ height: "104px", width: "104px" }} />
+          <span style={{ color: "#FFC700", fontSize: "24px", fontWeight: 800, maxWidth: "260px" }}>
+            Aponte a câmera e saiba mais
+          </span>
+        </div>
+      ) : null}
+
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </Stage>
   );
