@@ -195,6 +195,7 @@ export type Database = {
         Row: {
           command: Json | null
           created_at: string
+          device_uuid: string | null
           event_mode: boolean
           id: string
           is_live_active: boolean
@@ -215,6 +216,7 @@ export type Database = {
         Insert: {
           command?: Json | null
           created_at?: string
+          device_uuid?: string | null
           event_mode?: boolean
           id?: string
           is_live_active?: boolean
@@ -235,6 +237,7 @@ export type Database = {
         Update: {
           command?: Json | null
           created_at?: string
+          device_uuid?: string | null
           event_mode?: boolean
           id?: string
           is_live_active?: boolean
@@ -288,6 +291,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_ghost_tvs: { Args: never; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -296,6 +300,10 @@ export type Database = {
         Returns: boolean
       }
       register_tv: { Args: { _code: string }; Returns: string }
+      register_tv_device: {
+        Args: { _code?: string; _device_uuid: string }
+        Returns: Json
+      }
       submit_event_photo: {
         Args: {
           _device_hash: string
