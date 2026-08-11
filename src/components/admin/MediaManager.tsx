@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
+  QrCode,
 } from "lucide-react";
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
