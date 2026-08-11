@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventPhoto } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { BellRing, Check, Sparkles, Trash2, X, Images, QrCode } from "lucide-react";
+import { Check, Sparkles, Trash2, X, Images, QrCode } from "lucide-react";
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
@@ -15,8 +14,6 @@ type PhotoView = EventPhoto & { preview: string };
 export function EventsManager({ onChanged }: { onChanged?: () => void }) {
   const [photos, setPhotos] = useState<PhotoView[]>([]);
   const [moderation, setModeration] = useState(true);
-  const [alertText, setAlertText] = useState("Atenção: Sorteio em 5 minutos!");
-  const [sending, setSending] = useState(false);
   const [submitUrl, setSubmitUrl] = useState("");
 
   const load = useCallback(async () => {
@@ -60,11 +57,12 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
 
   useEffect(() => {
     supabase
-      .from("tvs")
-      .select("event_mode")
-      .limit(1)
-      .then(() => {
-        /* estado de moderação é local ao painel */
+      .from("app_settings")
+      .select("auto_publish")
+      .eq("id", "global")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setModeration(!(data as { auto_publish: boolean }).auto_publish);
       });
   }, []);
 
@@ -131,24 +129,17 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
     load();
   }
 
-  async function fireAlert() {
-    const message = alertText.trim();
-    if (!message) return;
-    setSending(true);
-    const { error } = await supabase.from("tv_alerts").insert({
-      message,
-      expires_at: new Date(Date.now() + 30000).toISOString(),
-    });
-    setSending(false);
-    if (error) {
-      toast.error("Não foi possível disparar o alerta");
-      return;
-    }
-    toast.success("Alerta enviado para todas as TVs");
-  }
-
   async function setModerationMode(value: boolean) {
     setModeration(value);
+    const { error: settingsError } = await supabase
+      .from("app_settings")
+      .update({ auto_publish: !value })
+      .eq("id", "global");
+    if (settingsError) {
+      toast.error("Não foi possível salvar a preferência");
+      setModeration(!value);
+      return;
+    }
     if (!value) {
       const { error } = await supabase
         .from("event_photos")
@@ -176,8 +167,8 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
               </Label>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {moderation
-                  ? "Cada foto exige aprovação manual."
-                  : "Fotos vão direto para as TVs."}
+                  ? "Cada foto exige aprovação manual no seu iPhone."
+                  : "Publicação automática: fotos vão direto para as TVs."}
               </p>
             </div>
             <Switch id="moderation" checked={moderation} onCheckedChange={setModerationMode} />
@@ -192,36 +183,6 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
               Use este endereço no QR code das TVs em modo multi-zona.
             </p>
           </div>
-        </div>
-      </section>
-
-      <section className="cf-card p-5">
-        <div className="flex items-center gap-2">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
-            <BellRing className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h3 className="text-base font-extrabold">Alerta VIP / Interrupção</h3>
-            <p className="text-xs text-muted-foreground">
-              Exibe um aviso em tela cheia imediatamente em todas as TVs.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Input
-            value={alertText}
-            onChange={(e) => setAlertText(e.target.value)}
-            maxLength={120}
-            className="h-11 rounded-xl"
-          />
-          <Button
-            onClick={fireAlert}
-            disabled={sending}
-            variant="destructive"
-            className="cf-live-glow h-11 shrink-0 rounded-xl px-6 font-extrabold"
-          >
-            <BellRing className="mr-1.5 h-4 w-4" /> Disparar agora
-          </Button>
         </div>
       </section>
 
