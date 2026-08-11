@@ -47,6 +47,7 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TvRow | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   async function load() {
     const [{ data: t }, { data: p }] = await Promise.all([
