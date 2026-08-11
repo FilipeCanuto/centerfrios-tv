@@ -17,6 +17,7 @@ import {
   loadManifest,
   precacheMedia,
   pruneCache,
+  purgeAll,
   resolveMediaUrl,
   saveManifest,
 } from "@/lib/player-cache";
@@ -103,7 +104,7 @@ export function TvPlayer() {
     if (playlistId) {
       const [{ data: pl }, { data: mediaRows }] = await Promise.all([
         supabase.from("playlists").select("id,name,items,created_at").eq("id", playlistId).maybeSingle(),
-        supabase.from("media").select("id,title,url,type,duration,created_at"),
+        supabase.from("media").select("id,title,url,type,duration,qr_url,created_at"),
       ]);
 
       if (pl && mediaRows) {
@@ -119,6 +120,7 @@ export function TvPlayer() {
             url: m.url,
             type: m.type,
             title: m.title,
+            qr_url: m.qr_url,
             duration: it.custom_duration || m.duration || 10,
           });
         });
@@ -198,6 +200,12 @@ export function TvPlayer() {
     window.localStorage.setItem("cf_last_nonce", cmd.nonce);
     if (cmd.action === "reload") {
       window.location.reload();
+      return;
+    }
+    if (cmd.action === "purge") {
+      purgeAll().then(() => {
+        setTimeout(() => window.location.reload(), 1000);
+      });
       return;
     }
     if (cmd.action === "sync") {
@@ -328,9 +336,12 @@ export function TvPlayer() {
     return () => clearInterval(check);
   }, []);
 
-  // ---------- QR code dinâmico ----------
+  const current = items.length ? items[index % items.length] : null;
+  const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
+
+  // ---------- QR code dinâmico (mídia atual tem prioridade sobre a TV) ----------
   useEffect(() => {
-    const url = tv?.qr_url;
+    const url = currentQrUrl;
     if (!url) {
       setQrDataUrl(null);
       return;
@@ -338,9 +349,8 @@ export function TvPlayer() {
     QRCode.toDataURL(url, { margin: 1, width: 240 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(null));
-  }, [tv?.qr_url]);
+  }, [currentQrUrl]);
 
-  const current = items.length ? items[index % items.length] : null;
   const liveOn = !!(tv && tv.is_live_active);
   const multizone = tv?.layout_mode === "multizone";
   const portrait = tv?.orientation === "portrait";
@@ -577,6 +587,27 @@ export function TvPlayer() {
             </div>
           </div>
         </>
+      ) : null}
+
+      {!multizone && current.qr_url && qrDataUrl ? (
+        <div
+          style={{
+            position: "absolute",
+            right: "24px",
+            bottom: "24px",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            backgroundColor: "rgba(10,57,129,0.9)",
+            borderRadius: "16px",
+            padding: "12px 16px",
+          }}
+        >
+          <img src={qrDataUrl} alt="QR code" style={{ height: "104px", width: "104px" }} />
+          <span style={{ color: "#FFC700", fontSize: "24px", fontWeight: 800, maxWidth: "260px" }}>
+            Aponte a câmera e saiba mais
+          </span>
+        </div>
       ) : null}
 
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}

@@ -106,3 +106,20 @@ export async function resolveMediaUrl(url: string): Promise<{ src: string; revok
     return { src: url, revoke: false };
   }
 }
+
+/** Limpa por completo o cache local do player (IndexedDB + Cache API). */
+export async function purgeAll(): Promise<void> {
+  try {
+    if (typeof caches !== "undefined") {
+      const names = await caches.keys();
+      for (const name of names) await caches.delete(name);
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(DB_NAME);
+  } catch {
+    /* ignore */
+  }
+}

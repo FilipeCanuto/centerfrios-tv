@@ -17,6 +17,7 @@ export type MediaRow = {
   duration: number;
   file_size: number | null;
   resolution: string | null;
+  qr_url: string | null;
   created_at: string;
 };
 
@@ -34,7 +35,7 @@ export type PlaylistRow = {
 };
 
 export type TvCommand = {
-  action: "reload" | "mute" | "unmute" | "sync";
+  action: "reload" | "mute" | "unmute" | "sync" | "purge";
   nonce: string;
 };
 
@@ -81,6 +82,14 @@ export type ResolvedItem = {
   type: string;
   duration: number;
   title: string;
+  qr_url?: string | null;
+};
+
+export type AlertTemplate = {
+  id: string;
+  message: string;
+  duration_seconds: number;
+  created_at: string;
 };
 
 export const TV_SELECT_COLUMNS =
