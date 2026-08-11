@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_templates: {
+        Row: {
+          created_at: string
+          duration_seconds: number
+          id: string
+          message: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          message: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          message?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      app_settings: {
+        Row: {
+          auto_publish: boolean
+          created_at: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          auto_publish?: boolean
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          auto_publish?: boolean
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       event_photos: {
         Row: {
           created_at: string
@@ -71,6 +116,7 @@ export type Database = {
           duration: number
           file_size: number | null
           id: string
+          qr_url: string | null
           resolution: string | null
           storage_path: string | null
           title: string
@@ -82,6 +128,7 @@ export type Database = {
           duration?: number
           file_size?: number | null
           id?: string
+          qr_url?: string | null
           resolution?: string | null
           storage_path?: string | null
           title: string
@@ -93,6 +140,7 @@ export type Database = {
           duration?: number
           file_size?: number | null
           id?: string
+          qr_url?: string | null
           resolution?: string | null
           storage_path?: string | null
           title?: string
