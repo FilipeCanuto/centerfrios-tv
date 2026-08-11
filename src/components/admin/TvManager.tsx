@@ -485,6 +485,28 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar TVs fantasmas / inativas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Serão removidas {ghosts.length} tela(s) que estão offline, sem pareamento e sem
+              playlist vinculada. Telas ativas ou configuradas não são afetadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmCleanup}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Limpar agora
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
