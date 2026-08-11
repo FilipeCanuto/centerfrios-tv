@@ -201,14 +201,27 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
         </div>
       </section>
 
-      <div className="flex items-center justify-between px-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">
           Telas cadastradas
         </h3>
-        <span className="text-xs font-semibold text-muted-foreground">
-          {onlineCount} de {tvs.length} online
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-muted-foreground">
+            {onlineCount} de {tvs.length} online
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || ghosts.length === 0}
+            onClick={() => setCleanupOpen(true)}
+            className="h-9 rounded-xl border-destructive/40 font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Eraser className="mr-1.5 h-4 w-4" /> Limpar TVs fantasmas
+            {ghosts.length > 0 ? " (" + ghosts.length + ")" : ""}
+          </Button>
+        </div>
       </div>
+
 
       <div className="grid gap-4 sm:grid-cols-2">
         {tvs.map((tv) => {
