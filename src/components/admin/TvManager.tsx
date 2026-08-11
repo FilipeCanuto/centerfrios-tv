@@ -37,6 +37,7 @@ import {
   Maximize,
   Cpu,
   MonitorCheck,
+  Eraser,
 } from "lucide-react";
 
 export function TvManager({ onChanged }: { onChanged?: () => void }) {
@@ -105,12 +106,13 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
     if (message) toast.success(message);
   }
 
-  function sendCommand(tv: TvRow, action: "reload" | "mute" | "unmute" | "sync") {
+  function sendCommand(tv: TvRow, action: "reload" | "mute" | "unmute" | "sync" | "purge") {
     const labels: Record<string, string> = {
       reload: "Reiniciando o player…",
       mute: "Som desativado na TV",
       unmute: "Som ativado na TV",
       sync: "Sincronização forçada",
+      purge: "Cache limpo — a TV reinicia em instantes",
     };
     const changes: Record<string, unknown> = { command: { action, nonce: makeNonce() } };
     if (action === "mute") changes.muted = true;
@@ -405,6 +407,14 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   onClick={() => sendCommand(tv, "sync")}
                 >
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Forçar sincronização
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => sendCommand(tv, "purge")}
+                >
+                  <Eraser className="mr-1.5 h-4 w-4" /> Limpar cache &amp; reiniciar
                 </Button>
               </div>
             </article>
