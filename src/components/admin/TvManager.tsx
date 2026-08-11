@@ -47,6 +47,7 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TvRow | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   async function load() {
     const [{ data: t }, { data: p }] = await Promise.all([
@@ -137,6 +138,24 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
   }
 
   const onlineCount = tvs.filter((t) => isOnline(t.last_ping)).length;
+  const ghosts = tvs.filter((t) => !isOnline(t.last_ping) && !t.playlist_id && !t.is_paired);
+
+  async function confirmCleanup() {
+    setCleanupOpen(false);
+    setBusy(true);
+    const { data, error } = await supabase.rpc("cleanup_ghost_tvs");
+    setBusy(false);
+    if (error) {
+      toast.error("Não foi possível limpar as TVs fantasmas");
+      return;
+    }
+    const removed = typeof data === "number" ? data : 0;
+    toast.success(
+      removed > 0 ? removed + " TV(s) removida(s)" : "Nenhuma TV fantasma encontrada",
+    );
+    load();
+  }
+
 
   return (
     <div className="space-y-5">
@@ -182,14 +201,27 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
         </div>
       </section>
 
-      <div className="flex items-center justify-between px-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">
           Telas cadastradas
         </h3>
-        <span className="text-xs font-semibold text-muted-foreground">
-          {onlineCount} de {tvs.length} online
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-muted-foreground">
+            {onlineCount} de {tvs.length} online
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || ghosts.length === 0}
+            onClick={() => setCleanupOpen(true)}
+            className="h-9 rounded-xl border-destructive/40 font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Eraser className="mr-1.5 h-4 w-4" /> Limpar TVs fantasmas
+            {ghosts.length > 0 ? " (" + ghosts.length + ")" : ""}
+          </Button>
+        </div>
       </div>
+
 
       <div className="grid gap-4 sm:grid-cols-2">
         {tvs.map((tv) => {
@@ -453,6 +485,28 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar TVs fantasmas / inativas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Serão removidas {ghosts.length} tela(s) que estão offline, sem pareamento e sem
+              playlist vinculada. Telas ativas ou configuradas não são afetadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmCleanup}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Limpar agora
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
