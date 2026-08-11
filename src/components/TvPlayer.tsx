@@ -61,6 +61,7 @@ export function TvPlayer() {
     async function boot() {
       let storedCode = window.localStorage.getItem(TV_STORAGE.tvCode);
       let storedId = window.localStorage.getItem(TV_STORAGE.tvId);
+      const deviceUuid = getDeviceUuid();
 
       if (!storedCode) {
         storedCode = generatePairingCode();
@@ -69,11 +70,20 @@ export function TvPlayer() {
       setCode(storedCode);
 
       try {
-        const { data, error } = await supabase.rpc("register_tv", { _code: storedCode });
+        const { data, error } = await supabase.rpc("register_tv_device", {
+          _device_uuid: deviceUuid,
+          _code: storedCode,
+        });
         if (error) throw error;
-        if (typeof data === "string") {
-          storedId = data;
-          window.localStorage.setItem(TV_STORAGE.tvId, data);
+        const res = data as { id?: string; code?: string } | null;
+        if (res && res.id) {
+          storedId = res.id;
+          window.localStorage.setItem(TV_STORAGE.tvId, res.id);
+        }
+        if (res && res.code && res.code !== storedCode) {
+          storedCode = res.code;
+          window.localStorage.setItem(TV_STORAGE.tvCode, res.code);
+          setCode(res.code);
         }
       } catch {
         setOffline(true);
@@ -81,6 +91,7 @@ export function TvPlayer() {
 
       if (cancelled) return;
       tvIdRef.current = storedId;
+
 
       const cached = await loadManifest(MANIFEST_KEY);
       if (cached && cached.length > 0 && !cancelled) {
