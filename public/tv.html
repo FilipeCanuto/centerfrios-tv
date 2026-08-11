@@ -150,11 +150,20 @@
     if (on) { stopMedia(); }
   }
 
-  /* ---------- boot: codigo persistente, nunca duplica TV ---------- */
+  /* ---------- boot: device_uuid persistente, nunca duplica TV ---------- */
+  function genUuid() {
+    var s = "";
+    for (var i = 0; i < 32; i++) { s += "0123456789abcdef".charAt(Math.floor(Math.random() * 16)); }
+    return "dev-" + s + "-" + String(new Date().getTime());
+  }
+
   function boot() {
     var code = ls(K_CODE);
     if (!code) { code = genCode(); lsSet(K_CODE, code); }
     showPairing(code);
+
+    var uuid = ls(K_UUID);
+    if (!uuid) { uuid = genUuid(); lsSet(K_UUID, uuid); }
 
     tvId = ls(K_ID);
     var cached = ls(K_PL);
@@ -165,26 +174,21 @@
       } catch (e) {}
     }
 
-    if (tvId) {
-      // ja registrada: confirma existencia antes de qualquer insercao
-      req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=id", null, function (err, rows) {
-        if (!err && rows && rows.length) { ready(); } else { registerOnce(code); }
-      });
-    } else {
-      registerOnce(code);
-    }
+    registerOnce(uuid, code);
   }
 
-  function registerOnce(code) {
-    // register_tv faz upsert pelo codigo: reutiliza o registro existente
-    req("POST", "/rest/v1/rpc/register_tv", { _code: code }, function (err, data) {
-      if (!err && data && typeof data === "string") {
-        tvId = data;
-        lsSet(K_ID, data);
+  function registerOnce(uuid, code) {
+    // register_tv_device reutiliza a TV do aparelho; so insere se nao existir
+    req("POST", "/rest/v1/rpc/register_tv_device", { _device_uuid: uuid, _code: code }, function (err, data) {
+      if (!err && data && data.id) {
+        tvId = data.id;
+        lsSet(K_ID, data.id);
+        if (data.code && data.code !== code) { lsSet(K_CODE, data.code); showPairing(data.code); }
       }
       ready();
     });
   }
+
 
   function ready() {
     poll();
