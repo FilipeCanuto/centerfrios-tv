@@ -81,6 +81,18 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const runningRef = useRef(false);
 
+  async function saveQr(m: MediaRow, value: string) {
+    const next = value.trim() || null;
+    if ((m.qr_url || null) === next) return;
+    const { error } = await supabase.from("media").update({ qr_url: next }).eq("id", m.id);
+    if (error) {
+      toast.error("Não foi possível salvar o QR code");
+      return;
+    }
+    toast.success(next ? "QR code vinculado à mídia" : "QR code removido");
+    load();
+  }
+
   async function load() {
     const { data, error } = await supabase
       .from("media")
@@ -431,6 +443,24 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
                     {m.duration}s
                   </span>
                 ) : null}
+                {m.qr_url ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-primary">
+                    <QrCode className="h-3 w-3" /> QR
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-2.5 space-y-1">
+                <Label className="text-[11px] text-muted-foreground" htmlFor={"qr-media-" + m.id}>
+                  QR Code do anúncio (WhatsApp, catálogo, Instagram)
+                </Label>
+                <Input
+                  id={"qr-media-" + m.id}
+                  defaultValue={m.qr_url || ""}
+                  placeholder="https://wa.me/5599999999999"
+                  onBlur={(e) => saveQr(m, e.target.value)}
+                  className="h-9 rounded-lg text-xs"
+                />
               </div>
             </div>
           </article>
