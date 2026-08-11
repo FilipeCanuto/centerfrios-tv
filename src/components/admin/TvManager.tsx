@@ -137,6 +137,24 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
   }
 
   const onlineCount = tvs.filter((t) => isOnline(t.last_ping)).length;
+  const ghosts = tvs.filter((t) => !isOnline(t.last_ping) && !t.playlist_id && !t.is_paired);
+
+  async function confirmCleanup() {
+    setCleanupOpen(false);
+    setBusy(true);
+    const { data, error } = await supabase.rpc("cleanup_ghost_tvs");
+    setBusy(false);
+    if (error) {
+      toast.error("Não foi possível limpar as TVs fantasmas");
+      return;
+    }
+    const removed = typeof data === "number" ? data : 0;
+    toast.success(
+      removed > 0 ? removed + " TV(s) removida(s)" : "Nenhuma TV fantasma encontrada",
+    );
+    load();
+  }
+
 
   return (
     <div className="space-y-5">
