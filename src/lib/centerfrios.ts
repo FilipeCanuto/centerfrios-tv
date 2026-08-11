@@ -152,7 +152,29 @@ const STORAGE_KEYS = {
   tvId: "cf_tv_id",
   tvCode: "cf_tv_code",
   playlist: "cf_playlist_cache",
+  deviceUuid: "centerfrios_device_uuid",
 };
+
+export function getDeviceUuid(): string {
+  var existing: string | null = null;
+  try {
+    existing = window.localStorage.getItem(STORAGE_KEYS.deviceUuid);
+  } catch (e) {
+    existing = null;
+  }
+  if (existing && existing.length >= 8) return existing;
+  var hex = "0123456789abcdef";
+  var s = "";
+  for (var i = 0; i < 32; i++) s += hex.charAt(Math.floor(Math.random() * 16));
+  var uuid = "dev-" + s + "-" + String(Date.now());
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.deviceUuid, uuid);
+  } catch (e) {
+    /* storage indisponível */
+  }
+  return uuid;
+}
+
 
 export const TV_STORAGE = STORAGE_KEYS;
 
