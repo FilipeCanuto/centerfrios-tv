@@ -972,6 +972,13 @@ function Badge({ children }: { children: React.ReactNode }) {
  * sentido anti-horário, trocando largura/altura para ocupar a tela inteira.
  */
 function Stage({ children, portrait }: { children: React.ReactNode; portrait: boolean }) {
+  const gpu: React.CSSProperties = {
+    transform: "translate3d(0, 0, 0)",
+    backfaceVisibility: "hidden",
+    WebkitBackfaceVisibility: "hidden",
+    willChange: "transform",
+  } as React.CSSProperties;
+
   const inner: React.CSSProperties = portrait
     ? {
         position: "absolute",
@@ -979,8 +986,10 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         left: "50%",
         width: "100vh",
         height: "100vw",
-        transform: "translate(-50%, -50%) rotate(-90deg)",
+        transform: "translate(-50%, -50%) rotate(-90deg) translate3d(0, 0, 0)",
         transformOrigin: "center center",
+        backfaceVisibility: "hidden",
+        willChange: "transform",
         backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
@@ -994,6 +1003,7 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
+        ...gpu,
       };
 
   return (
@@ -1006,9 +1016,48 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         bottom: 0,
         backgroundColor: "#000000",
         overflow: "hidden",
+        ...gpu,
       }}
     >
       <div style={inner}>{children}</div>
     </div>
   );
 }
+
+/** Spinner discreto exibido apenas enquanto o vídeo enche o buffer. */
+function BufferSpinner() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: "28px",
+        bottom: "28px",
+        width: "46px",
+        height: "46px",
+        borderRadius: "50%",
+        border: "5px solid rgba(255,255,255,0.25)",
+        borderTopColor: BRAND.yellow,
+        animation: "cf-spin 0.9s linear infinite",
+      }}
+    />
+  );
+}
+
+/** Pré-carrega a próxima mídia da playlist fora da tela. */
+function Preloader({ item }: { item: ResolvedItem | null }) {
+  if (!item) return null;
+  if (item.type === "video") {
+    return (
+      <video
+        key={item.media_id}
+        src={item.url}
+        preload="auto"
+        muted
+        playsInline
+        style={{ display: "none" }}
+      />
+    );
+  }
+  return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
+}
+
