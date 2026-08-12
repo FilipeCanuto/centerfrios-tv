@@ -6,7 +6,6 @@ import {
   LOGO_URL,
   TV_SELECT_COLUMNS,
   TV_STORAGE,
-  generatePairingCode,
   getDeviceUuid,
   parsePlaylistItems,
   type EventPhoto,
@@ -23,7 +22,7 @@ import {
   saveManifest,
 } from "@/lib/player-cache";
 
-type Status = "boot" | "pairing" | "playing" | "empty";
+type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
 const MANIFEST_KEY = "playlist";
@@ -55,53 +54,56 @@ export function TvPlayer() {
 
   const advance = useCallback(() => setIndex((i) => i + 1), []);
 
-  // ---------- registro / pareamento ----------
+  // ---------- registro / pareamento (código sempre vem do servidor) ----------
   useEffect(() => {
     let cancelled = false;
 
+    async function registerWithBackoff(deviceUuid: string) {
+      const delays = [3000, 5000, 10000];
+      let attempt = 0;
+      // tenta indefinidamente com backoff, sem nunca trocar o device_uuid
+      for (;;) {
+        if (cancelled) return null;
+        try {
+          const { data, error } = await supabase.rpc("register_tv_device", {
+            p_device_uuid: deviceUuid,
+          });
+          if (error) throw error;
+          const res = data as { id?: string; pairing_code?: string } | null;
+          if (res && res.id && res.pairing_code) {
+            setOffline(false);
+            return res as { id: string; pairing_code: string };
+          }
+          throw new Error("resposta inválida");
+        } catch {
+          if (cancelled) return null;
+          setOffline(true);
+          const wait = delays[Math.min(attempt, delays.length - 1)];
+          attempt += 1;
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+    }
+
     async function boot() {
-      let storedCode = window.localStorage.getItem(TV_STORAGE.tvCode);
-      let storedId = window.localStorage.getItem(TV_STORAGE.tvId);
+      setStatus("connecting");
       const deviceUuid = getDeviceUuid();
 
-      if (!storedCode) {
-        storedCode = generatePairingCode();
-        window.localStorage.setItem(TV_STORAGE.tvCode, storedCode);
-      }
-      setCode(storedCode);
-
-      try {
-        const { data, error } = await supabase.rpc("register_tv_device", {
-          _device_uuid: deviceUuid,
-          _code: storedCode,
-        });
-        if (error) throw error;
-        const res = data as { id?: string; code?: string } | null;
-        if (res && res.id) {
-          storedId = res.id;
-          window.localStorage.setItem(TV_STORAGE.tvId, res.id);
-        }
-        if (res && res.code && res.code !== storedCode) {
-          storedCode = res.code;
-          window.localStorage.setItem(TV_STORAGE.tvCode, res.code);
-          setCode(res.code);
-        }
-      } catch {
-        setOffline(true);
-      }
-
-      if (cancelled) return;
-      tvIdRef.current = storedId;
-
-
       const cached = await loadManifest(MANIFEST_KEY);
-      if (cached && cached.length > 0 && !cancelled) {
-        setItems(cached);
-        setStatus("playing");
-      }
+      if (cached && cached.length > 0 && !cancelled) setItems(cached);
 
-      await refreshTv(storedId);
+      const res = await registerWithBackoff(deviceUuid);
+      if (cancelled || !res) return;
+
+      window.localStorage.setItem(TV_STORAGE.tvId, res.id);
+      window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
+      tvIdRef.current = res.id;
+      setCode(res.pairing_code);
+      setStatus("pairing");
+
+      await refreshTv(res.id);
     }
+
 
     boot();
     return () => {
@@ -333,11 +335,36 @@ export function TvPlayer() {
     beat();
     const interval = setInterval(beat, HEARTBEAT_MS);
     const revalidate = setInterval(() => refreshTv(tvIdRef.current), 60000);
+
+    // fallback híbrido: se o WebSocket for bloqueado, detecta pareamento em 4s
+    const guard = setInterval(async () => {
+      const id = tvIdRef.current;
+      if (!id) return;
+      const { data } = await supabase
+        .from("tvs")
+        .select("id,is_paired,playlist_id,event_mode")
+        .eq("id", id)
+        .maybeSingle();
+      if (!data) return;
+      const row = data as unknown as Pick<TvRow, "is_paired" | "playlist_id" | "event_mode">;
+      const prev = tvRef.current;
+      if (
+        !prev ||
+        prev.is_paired !== row.is_paired ||
+        prev.playlist_id !== row.playlist_id ||
+        prev.event_mode !== row.event_mode
+      ) {
+        refreshTv(id);
+      }
+    }, 4000);
+
     return () => {
       clearInterval(interval);
       clearInterval(revalidate);
+      clearInterval(guard);
     };
   }, [refreshTv]);
+
 
   // ---------- reload preventivo diário às 03:00 ----------
   useEffect(() => {
@@ -426,13 +453,24 @@ export function TvPlayer() {
   );
 
   // ---------- render ----------
-  if (status === "boot") {
+  if (status === "boot" || status === "connecting") {
     return (
       <Stage>
-        <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "40%", maxWidth: "520px" }} />
+        <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
+          <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
+          <p style={{ fontSize: "30px", marginTop: "48px", color: BRAND.yellow }}>
+            {offline
+              ? "Aguardando resposta da nuvem… Revalidando em 3s"
+              : "Conectando ao servidor e gerando código…"}
+          </p>
+          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
+            {BRAND.slogan}
+          </p>
+        </div>
       </Stage>
     );
   }
+
 
   if (status === "pairing") {
     return (
