@@ -7,7 +7,6 @@ import {
   TV_SELECT_COLUMNS,
   TV_STORAGE,
   getDeviceUuid,
-  getDeviceUuid,
   parsePlaylistItems,
   type EventPhoto,
   type MediaRow,
