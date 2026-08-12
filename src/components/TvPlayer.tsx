@@ -55,53 +55,56 @@ export function TvPlayer() {
 
   const advance = useCallback(() => setIndex((i) => i + 1), []);
 
-  // ---------- registro / pareamento ----------
+  // ---------- registro / pareamento (código sempre vem do servidor) ----------
   useEffect(() => {
     let cancelled = false;
 
+    async function registerWithBackoff(deviceUuid: string) {
+      const delays = [3000, 5000, 10000];
+      let attempt = 0;
+      // tenta indefinidamente com backoff, sem nunca trocar o device_uuid
+      for (;;) {
+        if (cancelled) return null;
+        try {
+          const { data, error } = await supabase.rpc("register_tv_device", {
+            p_device_uuid: deviceUuid,
+          });
+          if (error) throw error;
+          const res = data as { id?: string; pairing_code?: string } | null;
+          if (res && res.id && res.pairing_code) {
+            setOffline(false);
+            return res as { id: string; pairing_code: string };
+          }
+          throw new Error("resposta inválida");
+        } catch {
+          if (cancelled) return null;
+          setOffline(true);
+          const wait = delays[Math.min(attempt, delays.length - 1)];
+          attempt += 1;
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+    }
+
     async function boot() {
-      let storedCode = window.localStorage.getItem(TV_STORAGE.tvCode);
-      let storedId = window.localStorage.getItem(TV_STORAGE.tvId);
+      setStatus("connecting");
       const deviceUuid = getDeviceUuid();
 
-      if (!storedCode) {
-        storedCode = generatePairingCode();
-        window.localStorage.setItem(TV_STORAGE.tvCode, storedCode);
-      }
-      setCode(storedCode);
-
-      try {
-        const { data, error } = await supabase.rpc("register_tv_device", {
-          _device_uuid: deviceUuid,
-          _code: storedCode,
-        });
-        if (error) throw error;
-        const res = data as { id?: string; code?: string } | null;
-        if (res && res.id) {
-          storedId = res.id;
-          window.localStorage.setItem(TV_STORAGE.tvId, res.id);
-        }
-        if (res && res.code && res.code !== storedCode) {
-          storedCode = res.code;
-          window.localStorage.setItem(TV_STORAGE.tvCode, res.code);
-          setCode(res.code);
-        }
-      } catch {
-        setOffline(true);
-      }
-
-      if (cancelled) return;
-      tvIdRef.current = storedId;
-
-
       const cached = await loadManifest(MANIFEST_KEY);
-      if (cached && cached.length > 0 && !cancelled) {
-        setItems(cached);
-        setStatus("playing");
-      }
+      if (cached && cached.length > 0 && !cancelled) setItems(cached);
 
-      await refreshTv(storedId);
+      const res = await registerWithBackoff(deviceUuid);
+      if (cancelled || !res) return;
+
+      window.localStorage.setItem(TV_STORAGE.tvId, res.id);
+      window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
+      tvIdRef.current = res.id;
+      setCode(res.pairing_code);
+      setStatus("pairing");
+
+      await refreshTv(res.id);
     }
+
 
     boot();
     return () => {
