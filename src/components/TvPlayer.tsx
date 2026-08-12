@@ -242,8 +242,8 @@ export function TvPlayer() {
       }
       if (videoRef.current) {
         videoRef.current.muted = cmd.action === "mute";
-        resumeAudio();
       }
+
     },
     [refreshTv],
   );
