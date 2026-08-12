@@ -575,7 +575,9 @@ export function TvPlayer() {
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
-            Nenhum conteúdo vinculado a esta TV
+            {tv && tv.playlist_id
+              ? "Playlist vinculada não possui mídias cadastradas"
+              : "Nenhum conteúdo vinculado a esta TV"}
           </p>
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
