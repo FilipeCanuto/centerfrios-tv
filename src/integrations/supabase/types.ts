@@ -64,6 +64,7 @@ export type Database = {
           created_at: string
           device_hash: string | null
           featured: boolean
+          featured_until: string | null
           id: string
           image_url: string
           status: string
@@ -74,6 +75,7 @@ export type Database = {
           created_at?: string
           device_hash?: string | null
           featured?: boolean
+          featured_until?: string | null
           id?: string
           image_url: string
           status?: string
@@ -84,9 +86,43 @@ export type Database = {
           created_at?: string
           device_hash?: string | null
           featured?: boolean
+          featured_until?: string | null
           id?: string
           image_url?: string
           status?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      event_sponsors: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          image_url: string
+          name: string
+          sort_order: number
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          image_url: string
+          name: string
+          sort_order?: number
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          image_url?: string
+          name?: string
+          sort_order?: number
           storage_path?: string | null
           updated_at?: string
         }
@@ -194,6 +230,8 @@ export type Database = {
       tvs: {
         Row: {
           command: Json | null
+          countdown_ends_at: string | null
+          countdown_label: string | null
           created_at: string
           device_uuid: string | null
           event_mode: boolean
@@ -203,18 +241,27 @@ export type Database = {
           last_ping: string | null
           layout_mode: string
           live_stream_url: string | null
+          media_fit: string
           memory_usage: string | null
           muted: boolean
           name: string
           orientation: string
           pairing_code: string
           playlist_id: string | null
+          qr_position: string
           qr_url: string | null
           screen_resolution: string | null
+          sponsors_enabled: boolean
+          ticker_position: string
           ticker_text: string | null
+          volume: number
+          welcome_message: string | null
+          welcome_until: string | null
         }
         Insert: {
           command?: Json | null
+          countdown_ends_at?: string | null
+          countdown_label?: string | null
           created_at?: string
           device_uuid?: string | null
           event_mode?: boolean
@@ -224,18 +271,27 @@ export type Database = {
           last_ping?: string | null
           layout_mode?: string
           live_stream_url?: string | null
+          media_fit?: string
           memory_usage?: string | null
           muted?: boolean
           name?: string
           orientation?: string
           pairing_code: string
           playlist_id?: string | null
+          qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          sponsors_enabled?: boolean
+          ticker_position?: string
           ticker_text?: string | null
+          volume?: number
+          welcome_message?: string | null
+          welcome_until?: string | null
         }
         Update: {
           command?: Json | null
+          countdown_ends_at?: string | null
+          countdown_label?: string | null
           created_at?: string
           device_uuid?: string | null
           event_mode?: boolean
@@ -245,15 +301,22 @@ export type Database = {
           last_ping?: string | null
           layout_mode?: string
           live_stream_url?: string | null
+          media_fit?: string
           memory_usage?: string | null
           muted?: boolean
           name?: string
           orientation?: string
           pairing_code?: string
           playlist_id?: string | null
+          qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          sponsors_enabled?: boolean
+          ticker_position?: string
           ticker_text?: string | null
+          volume?: number
+          welcome_message?: string | null
+          welcome_until?: string | null
         }
         Relationships: [
           {

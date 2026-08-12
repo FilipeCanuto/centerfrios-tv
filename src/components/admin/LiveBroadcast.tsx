@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { isOnline, type TvRow } from "@/lib/centerfrios";
+import { isOnline, makeNonce, type TvRow } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -19,13 +19,24 @@ export function LiveBroadcast() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function load() {
-    const { data } = await supabase.from("tvs").select("*").eq("is_paired", true);
+    const { data } = await supabase
+      .from("tvs")
+      .select("*")
+      .eq("is_paired", true)
+      .order("created_at", { ascending: true });
     setTvs((data || []) as unknown as TvRow[]);
   }
 
   useEffect(() => {
     load();
+    const channel = supabase
+      .channel("live-tvs")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tvs" }, () => load())
+      .subscribe();
+    const interval = setInterval(load, 15000);
     return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
       stopLive();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -33,6 +44,16 @@ export function LiveBroadcast() {
 
   function selectedIds() {
     return Object.keys(targets).filter((id) => targets[id]);
+  }
+
+  const allSelected = tvs.length > 0 && tvs.every((t) => targets[t.id]);
+
+  function toggleAll(checked: boolean) {
+    const next: Record<string, boolean> = {};
+    tvs.forEach((t) => {
+      next[t.id] = checked;
+    });
+    setTargets(next);
   }
 
   async function startLive() {
@@ -52,11 +73,20 @@ export function LiveBroadcast() {
         await videoRef.current.play();
       }
 
-      await supabase.from("tvs").update({ is_live_active: true }).in("id", ids);
+      // liga o modo live e força a sincronização imediata das telas escolhidas
+      await supabase
+        .from("tvs")
+        .update({ is_live_active: true, command: { action: "sync", nonce: makeNonce() } })
+        .in("id", ids);
+      // garante que as demais telas saiam do modo live
+      const others = tvs.filter((t) => ids.indexOf(t.id) === -1).map((t) => t.id);
+      if (others.length) {
+        await supabase.from("tvs").update({ is_live_active: false }).in("id", others);
+      }
       setLive(true);
 
       timerRef.current = setInterval(() => sendFrame(), FRAME_INTERVAL_MS);
-      toast.success("Transmissão iniciada");
+      toast.success("Transmissão iniciada em " + ids.length + " tela(s)");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Não foi possível acessar a câmera";
       toast.error(message);
@@ -84,10 +114,14 @@ export function LiveBroadcast() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    const ids = selectedIds();
-    if (ids.length) await supabase.from("tvs").update({ is_live_active: false }).in("id", ids);
+    // encerra em todas as telas que estiverem em live, não só nas selecionadas
+    await supabase
+      .from("tvs")
+      .update({ is_live_active: false, command: { action: "sync", nonce: makeNonce() } })
+      .eq("is_live_active", true);
     setLive(false);
   }
+
 
   const count = selectedIds().length;
 
@@ -154,7 +188,21 @@ export function LiveBroadcast() {
           </span>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <label
+          htmlFor="tv-all"
+          className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-primary/40 bg-secondary/50 p-3"
+        >
+          <Checkbox
+            id="tv-all"
+            checked={allSelected}
+            disabled={live || tvs.length === 0}
+            onCheckedChange={(v) => toggleAll(v === true)}
+          />
+          <span className="text-sm font-bold">Transmitir para TODAS as TVs</span>
+        </label>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+
           {tvs.map((tv) => {
             const online = isOnline(tv.last_ping);
             const checked = !!targets[tv.id];

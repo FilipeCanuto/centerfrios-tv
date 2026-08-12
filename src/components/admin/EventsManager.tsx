@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { EventExtras } from "@/components/admin/EventExtras";
 import type { EventPhoto } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -104,24 +105,35 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
 
   async function feature(photo: PhotoView) {
     if (photo.status !== "approved") await approve(photo);
-    await supabase.from("event_photos").update({ featured: false }).eq("featured", true);
+    await supabase
+      .from("event_photos")
+      .update({ featured: false, featured_until: null })
+      .eq("featured", true);
     const { error } = await supabase
       .from("event_photos")
-      .update({ featured: true, status: "approved" })
+      .update({
+        featured: true,
+        status: "approved",
+        featured_until: new Date(Date.now() + 10000).toISOString(),
+      })
       .eq("id", photo.id);
     if (error) {
       toast.error("Não foi possível destacar");
       return;
     }
-    toast.success("Foto em destaque nas TVs");
+    toast.success("Foto em destaque por 10 segundos nas TVs");
     load();
   }
 
   async function clearFeatured() {
-    await supabase.from("event_photos").update({ featured: false }).eq("featured", true);
+    await supabase
+      .from("event_photos")
+      .update({ featured: false, featured_until: null })
+      .eq("featured", true);
     toast.success("Destaque encerrado");
     load();
   }
+
 
   async function removePhoto(photo: PhotoView) {
     if (photo.storage_path) await supabase.storage.from("event-photos").remove([photo.storage_path]);
@@ -185,6 +197,9 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
           </div>
         </div>
       </section>
+
+      <EventExtras />
+
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <h3 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">
