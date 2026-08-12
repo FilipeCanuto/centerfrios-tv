@@ -372,7 +372,7 @@ export function TvPlayer() {
       clearInterval(revalidate);
       clearInterval(guard);
     };
-  }, [refreshTv]);
+  }, [refreshTv, runCommand]);
 
 
   // ---------- reload preventivo diário às 03:00 ----------
