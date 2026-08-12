@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -8,9 +8,11 @@ import {
   TV_STORAGE,
   getDeviceUuid,
   type EventPhoto,
+  type EventSponsor,
   type ResolvedItem,
   type TvRow,
 } from "@/lib/centerfrios";
+import { attachAudioChain, resumeAudio } from "@/lib/audio-chain";
 import {
   loadManifest,
   precacheMedia,
@@ -25,7 +27,7 @@ type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
 const MANIFEST_KEY = "playlist";
 const HEARTBEAT_MS = 8000;
-const STALL_MS = 15000;
+const METADATA_GUARD_MS = 20000;
 const FADE_MS = 700;
 
 export function TvPlayer() {
@@ -41,6 +43,8 @@ export function TvPlayer() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
+  const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
+  const [now, setNow] = useState(() => Date.now());
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,6 +56,12 @@ export function TvPlayer() {
 
   const advance = useCallback(() => setIndex((i) => i + 1), []);
 
+  // relógio compartilhado (cronômetro / destaque / vinheta)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // ---------- registro / pareamento (código sempre vem do servidor) ----------
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +69,6 @@ export function TvPlayer() {
     async function registerWithBackoff(deviceUuid: string) {
       const delays = [3000, 5000, 10000];
       let attempt = 0;
-      // tenta indefinidamente com backoff, sem nunca trocar o device_uuid
       for (;;) {
         if (cancelled) return null;
         try {
@@ -98,10 +107,8 @@ export function TvPlayer() {
       tvIdRef.current = res.id;
       setCode(res.pairing_code);
 
-      // não mostra o código antes de saber se a TV já está pareada
       await refreshTv(res.id);
     }
-
 
     boot();
     return () => {
@@ -119,14 +126,16 @@ export function TvPlayer() {
       });
 
       if (!error && rows) {
-        (rows as unknown as Array<{
-          media_id: string;
-          title: string;
-          url: string;
-          type: string;
-          duration: number | null;
-          qr_url: string | null;
-        }>).forEach((r) => {
+        (
+          rows as unknown as Array<{
+            media_id: string;
+            title: string;
+            url: string;
+            type: string;
+            duration: number | null;
+            qr_url: string | null;
+          }>
+        ).forEach((r) => {
           if (!r.url) return;
           resolved.push({
             media_id: r.media_id,
@@ -139,7 +148,6 @@ export function TvPlayer() {
         });
       }
     }
-
 
     if (eventMode) {
       const { data: photos } = await supabase
@@ -197,7 +205,6 @@ export function TvPlayer() {
       setOffline(false);
       const row = data as unknown as TvRow;
       setTv(row);
-      // já pareada (ou com playlist vinculada) → inicia direto, sem tela de código
       if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         setStatus("pairing");
         return;
@@ -208,29 +215,33 @@ export function TvPlayer() {
   );
 
   // ---------- comandos remotos ----------
-  const runCommand = useCallback((cmd: TvRow["command"]) => {
-    if (!cmd || !cmd.nonce) return;
-    const seen = window.localStorage.getItem("cf_last_nonce");
-    if (seen === cmd.nonce) return;
-    window.localStorage.setItem("cf_last_nonce", cmd.nonce);
-    if (cmd.action === "reload") {
-      window.location.reload();
-      return;
-    }
-    if (cmd.action === "purge") {
-      purgeAll().then(() => {
-        setTimeout(() => window.location.reload(), 1000);
-      });
-      return;
-    }
-    if (cmd.action === "sync") {
-      refreshTv(tvIdRef.current);
-      return;
-    }
-    if (videoRef.current) {
-      videoRef.current.muted = cmd.action === "mute";
-    }
-  }, [refreshTv]);
+  const runCommand = useCallback(
+    (cmd: TvRow["command"]) => {
+      if (!cmd || !cmd.nonce) return;
+      const seen = window.localStorage.getItem("cf_last_nonce");
+      if (seen === cmd.nonce) return;
+      window.localStorage.setItem("cf_last_nonce", cmd.nonce);
+      if (cmd.action === "reload") {
+        window.location.reload();
+        return;
+      }
+      if (cmd.action === "purge") {
+        purgeAll().then(() => {
+          setTimeout(() => window.location.reload(), 1000);
+        });
+        return;
+      }
+      if (cmd.action === "sync") {
+        refreshTv(tvIdRef.current);
+        return;
+      }
+      if (videoRef.current) {
+        videoRef.current.muted = cmd.action === "mute";
+        resumeAudio();
+      }
+    },
+    [refreshTv],
+  );
 
   // ---------- realtime ----------
   useEffect(() => {
@@ -266,7 +277,6 @@ export function TvPlayer() {
         const t = tvRef.current;
         if (t && t.playlist_id) loadPlaylist(t.playlist_id, t.event_mode);
       })
-
       .on("postgres_changes", { event: "*", schema: "public", table: "event_photos" }, () => {
         const t = tvRef.current;
         if (t && t.event_mode) loadPlaylist(t.playlist_id, true);
@@ -291,7 +301,7 @@ export function TvPlayer() {
     };
   }, [tv?.id, loadPlaylist, runCommand]);
 
-  // ---------- destaque imediato ----------
+  // ---------- destaque (spotlight) ----------
   useEffect(() => {
     if (!tv?.event_mode) {
       setFeatured(null);
@@ -301,7 +311,7 @@ export function TvPlayer() {
     async function poll() {
       const { data } = await supabase
         .from("event_photos")
-        .select("id,image_url,status,featured,created_at")
+        .select("id,image_url,status,featured,featured_until,created_at")
         .eq("status", "approved")
         .eq("featured", true)
         .order("created_at", { ascending: false })
@@ -311,12 +321,35 @@ export function TvPlayer() {
       setFeatured(row && row.image_url ? row : null);
     }
     poll();
-    const t = setInterval(poll, 10000);
+    const t = setInterval(poll, 4000);
     return () => {
       stop = true;
       clearInterval(t);
     };
   }, [tv?.event_mode]);
+
+  // ---------- patrocinadores ----------
+  useEffect(() => {
+    if (!tv?.sponsors_enabled) {
+      setSponsors([]);
+      return;
+    }
+    let stop = false;
+    async function load() {
+      const { data } = await supabase
+        .from("event_sponsors")
+        .select("*")
+        .eq("active", true)
+        .order("sort_order", { ascending: true });
+      if (!stop) setSponsors((data || []) as unknown as EventSponsor[]);
+    }
+    load();
+    const t = setInterval(load, 60000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [tv?.sponsors_enabled]);
 
   // ---------- heartbeat + revalidação ----------
   useEffect(() => {
@@ -343,32 +376,24 @@ export function TvPlayer() {
     const interval = setInterval(beat, HEARTBEAT_MS);
     const revalidate = setInterval(() => refreshTv(tvIdRef.current), 60000);
 
-    // fallback híbrido: se o WebSocket for bloqueado, detecta pareamento em 4s
     const guard = setInterval(async () => {
       const id = tvIdRef.current;
       if (!id) return;
       const { data } = await supabase
         .from("tvs")
-        .select("id,is_paired,playlist_id,event_mode,layout_mode,orientation,command")
+        .select(TV_SELECT_COLUMNS)
         .eq("id", id)
         .maybeSingle();
       if (!data) return;
-      const row = data as unknown as Pick<
-        TvRow,
-        "is_paired" | "playlist_id" | "event_mode" | "layout_mode" | "orientation" | "command"
-      >;
+      const row = data as unknown as TvRow;
       const prev = tvRef.current;
-      if (
+      const structural =
         !prev ||
         prev.is_paired !== row.is_paired ||
         prev.playlist_id !== row.playlist_id ||
-        prev.event_mode !== row.event_mode ||
-        prev.layout_mode !== row.layout_mode ||
-        prev.orientation !== row.orientation
-      ) {
-        refreshTv(id);
-      }
-      // fallback do botão "Forçar sincronização" quando o WebSocket está bloqueado
+        prev.event_mode !== row.event_mode;
+      setTv(row);
+      if (structural) refreshTv(id);
       runCommand(row.command);
     }, 4000);
 
@@ -379,12 +404,11 @@ export function TvPlayer() {
     };
   }, [refreshTv, runCommand]);
 
-
   // ---------- reload preventivo diário às 03:00 ----------
   useEffect(() => {
     const check = setInterval(() => {
-      const now = new Date();
-      if (now.getHours() === 3 && now.getMinutes() === 0) window.location.reload();
+      const d = new Date();
+      if (d.getHours() === 3 && d.getMinutes() === 0) window.location.reload();
     }, 60000);
     return () => clearInterval(check);
   }, []);
@@ -392,7 +416,7 @@ export function TvPlayer() {
   const current = items.length ? items[index % items.length] : null;
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
 
-  // ---------- QR code dinâmico (mídia atual tem prioridade sobre a TV) ----------
+  // ---------- QR code dinâmico ----------
   useEffect(() => {
     const url = currentQrUrl;
     if (!url) {
@@ -407,6 +431,24 @@ export function TvPlayer() {
   const liveOn = !!(tv && tv.is_live_active);
   const multizone = tv?.layout_mode === "multizone";
   const portrait = tv?.orientation === "portrait";
+  const volume = typeof tv?.volume === "number" ? tv.volume : 100;
+  const objectFit: "cover" | "contain" = tv?.media_fit === "cover" ? "cover" : "contain";
+  const tickerPosition = tv?.ticker_position || "bottom";
+  const qrPosition = tv?.qr_position || "top-right";
+
+  const spotlightOn = !!(
+    featured &&
+    featured.image_url &&
+    (!featured.featured_until || new Date(featured.featured_until).getTime() > now)
+  );
+  const welcomeOn = !!(
+    tv?.welcome_message &&
+    tv.welcome_until &&
+    new Date(tv.welcome_until).getTime() > now
+  );
+  const countdownMs =
+    tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
+  const countdownOn = countdownMs > 0;
 
   // ---------- crossfade + resolução de fonte (cache) ----------
   useEffect(() => {
@@ -419,7 +461,6 @@ export function TvPlayer() {
         if (revoke) URL.revokeObjectURL(src);
         return;
       }
-      setBack((prevFront) => prevFront);
       setFront((prev) => {
         setBack(prev);
         return { key, item: current, src, revoke };
@@ -432,7 +473,6 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
 
-  // garbage collection da camada anterior
   useEffect(() => {
     if (!back) return;
     const t = setTimeout(() => {
@@ -444,14 +484,15 @@ export function TvPlayer() {
     return () => clearTimeout(t);
   }, [back?.key]);
 
-  // ---------- temporizador de imagens / travamento de vídeo ----------
+  // ---------- temporizador: imagens por duração, vídeos até o fim ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (stallRef.current) clearTimeout(stallRef.current);
-    if (liveOn || !current || featured || alertMsg) return;
+    if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
 
     if (current.type === "video") {
-      stallRef.current = setTimeout(advance, STALL_MS);
+      // apenas rede de segurança até os metadados chegarem; o avanço real é o onEnded
+      stallRef.current = setTimeout(advance, METADATA_GUARD_MS);
     } else {
       timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     }
@@ -459,17 +500,30 @@ export function TvPlayer() {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (stallRef.current) clearTimeout(stallRef.current);
     };
-  }, [index, current, liveOn, featured, alertMsg, advance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  const stageStyle = useMemo(
-    () => (portrait ? ({ writingMode: "horizontal-tb" } as const) : ({} as const)),
-    [portrait],
+  // quando os metadados do vídeo chegam, a rede de segurança passa a valer a duração real
+  const handleVideoMetadata = useCallback((seconds: number) => {
+    if (stallRef.current) clearTimeout(stallRef.current);
+    if (!isFinite(seconds) || seconds <= 0) return;
+    stallRef.current = setTimeout(() => setIndex((i) => i + 1), seconds * 1000 + 8000);
+  }, []);
+
+  const overlays = (
+    <>
+      {countdownOn ? <Countdown label={tv?.countdown_label || null} ms={countdownMs} /> : null}
+      {sponsors.length > 0 ? (
+        <SponsorRail sponsors={sponsors} position={tickerPosition === "top" ? "bottom" : "top"} />
+      ) : null}
+      {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
+    </>
   );
 
   // ---------- render ----------
   if (status === "boot" || status === "connecting") {
     return (
-      <Stage>
+      <Stage portrait={false}>
         <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
           <p style={{ fontSize: "30px", marginTop: "48px", color: BRAND.yellow }}>
@@ -485,10 +539,9 @@ export function TvPlayer() {
     );
   }
 
-
   if (status === "pairing") {
     return (
-      <Stage>
+      <Stage portrait={portrait}>
         <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
           <p style={{ fontSize: "28px", marginTop: "40px", opacity: 0.85 }}>
@@ -522,14 +575,47 @@ export function TvPlayer() {
     );
   }
 
+  if (welcomeOn) {
+    return (
+      <Stage portrait={portrait}>
+        <div style={{ textAlign: "center", padding: "6%" }}>
+          <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: "110px" }} />
+          <p
+            style={{
+              marginTop: "40px",
+              color: BRAND.yellow,
+              fontSize: "40px",
+              fontWeight: 800,
+              letterSpacing: "6px",
+            }}
+          >
+            BOAS-VINDAS
+          </p>
+          <p
+            style={{
+              marginTop: "18px",
+              color: "#FFFFFF",
+              fontSize: "78px",
+              lineHeight: 1.15,
+              fontWeight: 800,
+            }}
+          >
+            {tv?.welcome_message}
+          </p>
+        </div>
+        {overlays}
+      </Stage>
+    );
+  }
+
   if (liveOn) {
     return (
-      <Stage style={stageStyle}>
+      <Stage portrait={portrait}>
         {liveFrame ? (
           <img
             src={liveFrame}
             alt="Transmissão ao vivo"
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            style={{ width: "100%", height: "100%", objectFit }}
           />
         ) : (
           <div style={{ textAlign: "center", color: "#FFFFFF" }}>
@@ -540,19 +626,21 @@ export function TvPlayer() {
           </div>
         )}
         <Badge>AO VIVO</Badge>
-        {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
+        {overlays}
       </Stage>
     );
   }
 
-  if (featured) {
+  if (spotlightOn && featured) {
     return (
-      <Stage>
-        <img
-          src={featured.image_url}
-          alt="Destaque do mural"
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
+      <Stage portrait={portrait}>
+        <div style={{ position: "absolute", inset: "24px", border: "10px solid " + BRAND.yellow, borderRadius: "22px", overflow: "hidden" }}>
+          <img
+            src={featured.image_url}
+            alt="Destaque do mural"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </div>
         <div
           style={{
             position: "absolute",
@@ -561,22 +649,22 @@ export function TvPlayer() {
             right: 0,
             padding: "18px",
             textAlign: "center",
-            backgroundColor: "rgba(10,57,129,0.85)",
-            color: "#FFC700",
+            backgroundColor: "rgba(10,57,129,0.9)",
+            color: BRAND.yellow,
             fontSize: "34px",
             fontWeight: 800,
           }}
         >
           MURAL DO EVENTO CENTERFRIOS
         </div>
-        {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
+        {overlays}
       </Stage>
     );
   }
 
   if (status === "empty" || !current) {
     return (
-      <Stage>
+      <Stage portrait={portrait}>
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
@@ -586,29 +674,40 @@ export function TvPlayer() {
           </p>
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
-        {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
+        {overlays}
       </Stage>
     );
   }
 
-  const mainZone: React.CSSProperties = multizone
-    ? { position: "absolute", top: 0, left: 0, right: 0, bottom: "90px" }
+  const tickerVisible = multizone && tickerPosition !== "hidden";
+  const mainZone: React.CSSProperties = tickerVisible
+    ? {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: tickerPosition === "top" ? "90px" : 0,
+        bottom: tickerPosition === "top" ? 0 : "90px",
+      }
     : { position: "absolute", inset: 0 };
 
+  const corner = cornerStyle(qrPosition);
+
   return (
-    <Stage style={stageStyle}>
+    <Stage portrait={portrait}>
       <div style={mainZone}>
-        {back ? <MediaLayer layer={back} muted opacity={1} /> : null}
+        {back ? <MediaLayer layer={back} muted objectFit={objectFit} volume={0} /> : null}
         {front ? (
           <MediaLayer
             key={front.key}
             layer={front}
             muted={tv?.muted !== false}
-            opacity={1}
+            volume={volume}
+            objectFit={objectFit}
             fade
             videoRef={videoRef}
             onEnded={advance}
             onError={advance}
+            onMetadata={handleVideoMetadata}
           />
         ) : null}
       </div>
@@ -618,14 +717,13 @@ export function TvPlayer() {
           <div
             style={{
               position: "absolute",
-              top: "18px",
-              right: "18px",
               display: "flex",
               alignItems: "center",
               gap: "14px",
               backgroundColor: "rgba(10,57,129,0.85)",
               borderRadius: "14px",
               padding: "12px 16px",
+              ...corner,
             }}
           >
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: "48px" }} />
@@ -634,24 +732,27 @@ export function TvPlayer() {
             ) : null}
           </div>
 
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: "90px",
-              backgroundColor: "#0A3981",
-              color: "#FFFFFF",
-              display: "flex",
-              alignItems: "center",
-              overflow: "hidden",
-            }}
-          >
-            <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
-              {tv?.ticker_text || BRAND.slogan}
+          {tickerVisible ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: tickerPosition === "top" ? 0 : undefined,
+                bottom: tickerPosition === "top" ? undefined : 0,
+                height: "90px",
+                backgroundColor: "#0A3981",
+                color: "#FFFFFF",
+                display: "flex",
+                alignItems: "center",
+                overflow: "hidden",
+              }}
+            >
+              <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
+                {tv?.ticker_text || BRAND.slogan}
+              </div>
             </div>
-          </div>
+          ) : null}
         </>
       ) : null}
 
@@ -659,14 +760,13 @@ export function TvPlayer() {
         <div
           style={{
             position: "absolute",
-            right: "24px",
-            bottom: "24px",
             display: "flex",
             alignItems: "center",
             gap: "12px",
             backgroundColor: "rgba(10,57,129,0.9)",
             borderRadius: "16px",
             padding: "12px 16px",
+            ...corner,
           }}
         >
           <img src={qrDataUrl} alt="QR code" style={{ height: "104px", width: "104px" }} />
@@ -676,47 +776,71 @@ export function TvPlayer() {
         </div>
       ) : null}
 
-      {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
+      {overlays}
     </Stage>
   );
+}
+
+function cornerStyle(position: string): React.CSSProperties {
+  if (position === "top-left") return { top: "18px", left: "18px" };
+  if (position === "bottom-left") return { bottom: "18px", left: "18px" };
+  if (position === "bottom-right") return { bottom: "18px", right: "18px" };
+  return { top: "18px", right: "18px" };
 }
 
 function MediaLayer({
   layer,
   muted,
-  opacity,
+  volume,
+  objectFit,
   fade,
   videoRef,
   onEnded,
   onError,
+  onMetadata,
 }: {
   layer: Layer;
   muted: boolean;
-  opacity: number;
+  volume: number;
+  objectFit: "cover" | "contain";
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
   onError?: () => void;
+  onMetadata?: (seconds: number) => void;
 }) {
+  const localRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (layer.item.type !== "video") return;
+    attachAudioChain(localRef.current, muted ? 0 : volume);
+  }, [layer.item.type, layer.src, muted, volume]);
+
   const base: React.CSSProperties = {
     position: "absolute",
     inset: 0,
     width: "100%",
     height: "100%",
-    objectFit: "contain",
-    opacity,
+    objectFit,
     animation: fade ? "cf-fade-in 0.7s ease-out" : undefined,
   };
 
   if (layer.item.type === "video") {
     return (
       <video
-        ref={videoRef}
+        ref={(el) => {
+          localRef.current = el;
+          if (videoRef) videoRef.current = el;
+        }}
         src={layer.src}
         autoPlay
         muted={muted}
         playsInline
         preload="metadata"
+        onLoadedMetadata={(e) => {
+          resumeAudio();
+          if (onMetadata) onMetadata(e.currentTarget.duration);
+        }}
         onEnded={onEnded}
         onError={onError}
         style={base}
@@ -724,6 +848,71 @@ function MediaLayer({
     );
   }
   return <img src={layer.src} alt={layer.item.title} onError={onError} style={base} />;
+}
+
+function SponsorRail({
+  sponsors,
+  position,
+}: {
+  sponsors: EventSponsor[];
+  position: "top" | "bottom";
+}) {
+  const loop = sponsors.concat(sponsors);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: position === "top" ? 0 : undefined,
+        bottom: position === "bottom" ? 0 : undefined,
+        height: "84px",
+        backgroundColor: "rgba(255,255,255,0.94)",
+        display: "flex",
+        alignItems: "center",
+        overflow: "hidden",
+      }}
+    >
+      <div className="cf-ticker" style={{ display: "flex", alignItems: "center", gap: "48px" }}>
+        {loop.map((s, i) => (
+          <img
+            key={s.id + "-" + i}
+            src={s.image_url}
+            alt={s.name}
+            style={{ height: "56px", objectFit: "contain" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Countdown({ label, ms }: { label: string | null; ms: number }) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const mm = String(Math.floor(total / 60)).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "24px",
+        transform: "translateX(-50%)",
+        backgroundColor: "rgba(10,57,129,0.92)",
+        borderRadius: "18px",
+        padding: "14px 28px",
+        textAlign: "center",
+        color: "#FFFFFF",
+      }}
+    >
+      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>
+        {label || "Começa em"}
+      </p>
+      <p style={{ fontSize: "56px", fontWeight: 800, color: BRAND.yellow, lineHeight: 1.1 }}>
+        {mm}:{ss}
+      </p>
+    </div>
+  );
 }
 
 function AlertOverlay({ message }: { message: string }) {
@@ -778,13 +967,35 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Stage({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
+/**
+ * Palco do player. Em modo retrato (9:16) todo o conteúdo é girado 90° no
+ * sentido anti-horário, trocando largura/altura para ocupar a tela inteira.
+ */
+function Stage({ children, portrait }: { children: React.ReactNode; portrait: boolean }) {
+  const inner: React.CSSProperties = portrait
+    ? {
+        position: "absolute",
+        top: "50%",
+        left: "50%",
+        width: "100vh",
+        height: "100vw",
+        transform: "translate(-50%, -50%) rotate(-90deg)",
+        transformOrigin: "center center",
+        backgroundColor: "#000000",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      }
+    : {
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      };
+
   return (
     <div
       style={{
@@ -794,14 +1005,10 @@ function Stage({
         right: 0,
         bottom: 0,
         backgroundColor: "#000000",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
         overflow: "hidden",
-        ...style,
       }}
     >
-      {children}
+      <div style={inner}>{children}</div>
     </div>
   );
 }

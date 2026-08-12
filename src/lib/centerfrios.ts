@@ -58,6 +58,15 @@ export type TvRow = {
   memory_usage: string | null;
   command: TvCommand | null;
   event_mode: boolean;
+  volume: number;
+  ticker_position: string;
+  qr_position: string;
+  media_fit: string;
+  sponsors_enabled: boolean;
+  countdown_label: string | null;
+  countdown_ends_at: string | null;
+  welcome_message: string | null;
+  welcome_until: string | null;
 };
 
 export type EventPhoto = {
@@ -66,6 +75,17 @@ export type EventPhoto = {
   storage_path: string | null;
   status: string;
   featured: boolean;
+  featured_until?: string | null;
+  created_at: string;
+};
+
+export type EventSponsor = {
+  id: string;
+  name: string;
+  image_url: string;
+  storage_path: string | null;
+  sort_order: number;
+  active: boolean;
   created_at: string;
 };
 
@@ -93,7 +113,8 @@ export type AlertTemplate = {
 };
 
 export const TV_SELECT_COLUMNS =
-  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode";
+  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until";
+
 
 export function makeNonce(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

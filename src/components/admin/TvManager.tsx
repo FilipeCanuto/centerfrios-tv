@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -395,6 +396,91 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   </div>
                 </div>
               ) : null}
+
+              <div className="mt-4 space-y-3 rounded-xl border border-border bg-secondary/40 p-3">
+                <div className="space-y-2">
+                  <Label className="text-xs">
+                    Volume mestre — {typeof tv.volume === "number" ? tv.volume : 100}%
+                  </Label>
+                  <Slider
+                    value={[typeof tv.volume === "number" ? tv.volume : 100]}
+                    min={0}
+                    max={100}
+                    step={5}
+                    onValueChange={(v) =>
+                      setTvs((prev) =>
+                        prev.map((t) => (t.id === tv.id ? ({ ...t, volume: v[0] } as TvRow) : t)),
+                      )
+                    }
+                    onValueCommit={(v) => patchTv(tv.id, { volume: v[0] }, "Volume atualizado")}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Posição do rodapé (ticker)</Label>
+                    <Select
+                      value={tv.ticker_position || "bottom"}
+                      onValueChange={(v) => patchTv(tv.id, { ticker_position: v })}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="bottom">Inferior</SelectItem>
+                        <SelectItem value="top">Superior</SelectItem>
+                        <SelectItem value="hidden">Oculto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Posição do QR code / logo</Label>
+                    <Select
+                      value={tv.qr_position || "top-right"}
+                      onValueChange={(v) => patchTv(tv.id, { qr_position: v })}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="top-right">Superior direito</SelectItem>
+                        <SelectItem value="top-left">Superior esquerdo</SelectItem>
+                        <SelectItem value="bottom-right">Inferior direito</SelectItem>
+                        <SelectItem value="bottom-left">Inferior esquerdo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Enquadramento da mídia</Label>
+                    <Select
+                      value={tv.media_fit || "contain"}
+                      onValueChange={(v) => patchTv(tv.id, { media_fit: v })}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="contain">Contain (sem cortes)</SelectItem>
+                        <SelectItem value="cover">Cover (preencher tela)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2">
+                    <Label htmlFor={"sponsors-" + tv.id} className="text-xs font-bold">
+                      Régua de patrocinadores
+                    </Label>
+                    <Switch
+                      id={"sponsors-" + tv.id}
+                      checked={!!tv.sponsors_enabled}
+                      onCheckedChange={(v) => patchTv(tv.id, { sponsors_enabled: v })}
+                    />
+                  </div>
+                </div>
+              </div>
+
 
               <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-secondary/40 px-3 py-2">
                 <Label htmlFor={"event-" + tv.id} className="text-xs font-bold">
