@@ -7,9 +7,7 @@ import {
   TV_SELECT_COLUMNS,
   TV_STORAGE,
   getDeviceUuid,
-  parsePlaylistItems,
   type EventPhoto,
-  type MediaRow,
   type ResolvedItem,
   type TvRow,
 } from "@/lib/centerfrios";
@@ -116,30 +114,32 @@ export function TvPlayer() {
     const resolved: ResolvedItem[] = [];
 
     if (playlistId) {
-      const [{ data: pl }, { data: mediaRows }] = await Promise.all([
-        supabase.from("playlists").select("id,name,items,created_at").eq("id", playlistId).maybeSingle(),
-        supabase.from("media").select("id,title,url,type,duration,qr_url,created_at"),
-      ]);
+      const { data: rows, error } = await supabase.rpc("get_tv_playlist_items", {
+        p_playlist_id: playlistId,
+      });
 
-      if (pl && mediaRows) {
-        const byId: Record<string, MediaRow> = {};
-        (mediaRows as unknown as MediaRow[]).forEach((m) => {
-          byId[m.id] = m;
-        });
-        parsePlaylistItems((pl as { items: unknown }).items).forEach((it) => {
-          const m = byId[it.media_id];
-          if (!m) return;
+      if (!error && rows) {
+        (rows as unknown as Array<{
+          media_id: string;
+          title: string;
+          url: string;
+          type: string;
+          duration: number | null;
+          qr_url: string | null;
+        }>).forEach((r) => {
+          if (!r.url) return;
           resolved.push({
-            media_id: m.id,
-            url: m.url,
-            type: m.type,
-            title: m.title,
-            qr_url: m.qr_url,
-            duration: it.custom_duration || m.duration || 10,
+            media_id: r.media_id,
+            url: r.url,
+            type: r.type,
+            title: r.title,
+            qr_url: r.qr_url,
+            duration: r.duration || 10,
           });
         });
       }
     }
+
 
     if (eventMode) {
       const { data: photos } = await supabase
@@ -262,6 +262,11 @@ export function TvPlayer() {
         const t = tvRef.current;
         if (t) loadPlaylist(t.playlist_id, t.event_mode);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "media" }, () => {
+        const t = tvRef.current;
+        if (t && t.playlist_id) loadPlaylist(t.playlist_id, t.event_mode);
+      })
+
       .on("postgres_changes", { event: "*", schema: "public", table: "event_photos" }, () => {
         const t = tvRef.current;
         if (t && t.event_mode) loadPlaylist(t.playlist_id, true);

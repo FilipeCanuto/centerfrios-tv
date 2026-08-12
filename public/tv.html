@@ -286,32 +286,24 @@
   /* ---------- playlist ---------- */
   function loadPlaylist(pid) {
     if (!pid) { showLoading(true); return; }
-    req("GET", "/rest/v1/playlists?id=eq." + pid + "&select=id,items", null, function (err, pls) {
-      if (err || !pls || !pls.length) { if (!playing) { showLoading(true); } return; }
-      var raw = pls[0].items || [];
-      raw.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-      req("GET", "/rest/v1/media?select=id,title,url,type,duration", null, function (err2, meds) {
-        if (err2 || !meds) { if (!playing) { showLoading(true); } return; }
-        var byId = {};
-        for (var i = 0; i < meds.length; i++) { byId[meds[i].id] = meds[i]; }
-        var list = [];
-        for (var j = 0; j < raw.length; j++) {
-          var m = byId[raw[j].media_id];
-          if (m) {
-            list.push({
-              url: m.url,
-              type: m.type,
-              duration: raw[j].custom_duration || m.duration || 10
-            });
-          }
-        }
-        items = list;
-        idx = 0;
-        try { lsSet(K_PL, JSON.stringify(list)); } catch (e) {}
-        if (items.length) { startLoop(); } else { showLoading(true); }
-      });
+    req("POST", "/rest/v1/rpc/get_tv_playlist_items", { p_playlist_id: pid }, function (err, rows) {
+      if (err || !rows) { if (!playing) { showLoading(true); } return; }
+      var list = [];
+      for (var j = 0; j < rows.length; j++) {
+        if (!rows[j] || !rows[j].url) { continue; }
+        list.push({
+          url: rows[j].url,
+          type: rows[j].type,
+          duration: rows[j].duration || 10
+        });
+      }
+      items = list;
+      idx = 0;
+      try { lsSet(K_PL, JSON.stringify(list)); } catch (e) {}
+      if (items.length) { startLoop(); } else { showLoading(true); }
     });
   }
+
 
   function startLoop() {
     if (isLive) { return; }
