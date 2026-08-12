@@ -197,7 +197,8 @@ export function TvPlayer() {
       setOffline(false);
       const row = data as unknown as TvRow;
       setTv(row);
-      if (!row.is_paired) {
+      // já pareada (ou com playlist vinculada) → inicia direto, sem tela de código
+      if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         setStatus("pairing");
         return;
       }
