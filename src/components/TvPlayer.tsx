@@ -453,13 +453,24 @@ export function TvPlayer() {
   );
 
   // ---------- render ----------
-  if (status === "boot") {
+  if (status === "boot" || status === "connecting") {
     return (
       <Stage>
-        <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "40%", maxWidth: "520px" }} />
+        <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
+          <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
+          <p style={{ fontSize: "30px", marginTop: "48px", color: BRAND.yellow }}>
+            {offline
+              ? "Aguardando resposta da nuvem… Revalidando em 3s"
+              : "Conectando ao servidor e gerando código…"}
+          </p>
+          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
+            {BRAND.slogan}
+          </p>
+        </div>
       </Stage>
     );
   }
+
 
   if (status === "pairing") {
     return (
