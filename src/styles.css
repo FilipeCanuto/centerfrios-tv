@@ -240,6 +240,12 @@
   }
 }
 
+@keyframes cf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes cf-ticker-scroll {
   from {
     transform: translateX(100%);

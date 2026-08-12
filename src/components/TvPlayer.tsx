@@ -12,7 +12,7 @@ import {
   type ResolvedItem,
   type TvRow,
 } from "@/lib/centerfrios";
-import { attachAudioChain, resumeAudio } from "@/lib/audio-chain";
+
 import {
   loadManifest,
   precacheMedia,
@@ -45,12 +45,17 @@ export function TvPlayer() {
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [buffering, setBuffering] = useState(false);
+  const [videoNonce, setVideoNonce] = useState(0);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stallRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
+  const retriesRef = useRef(0);
+  const currentRef = useRef<ResolvedItem | null>(null);
+
 
   tvRef.current = tv;
 
@@ -237,8 +242,8 @@ export function TvPlayer() {
       }
       if (videoRef.current) {
         videoRef.current.muted = cmd.action === "mute";
-        resumeAudio();
       }
+
     },
     [refreshTv],
   );
@@ -414,7 +419,10 @@ export function TvPlayer() {
   }, []);
 
   const current = items.length ? items[index % items.length] : null;
+  const nextItem = items.length > 1 ? items[(index + 1) % items.length] : null;
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
+  currentRef.current = current;
+
 
   // ---------- QR code dinâmico ----------
   useEffect(() => {
@@ -484,31 +492,35 @@ export function TvPlayer() {
     return () => clearTimeout(t);
   }, [back?.key]);
 
-  // ---------- temporizador: imagens por duração, vídeos até o fim ----------
+  // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (stallRef.current) clearTimeout(stallRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
+    if (current.type === "video") return;
 
-    if (current.type === "video") {
-      // apenas rede de segurança até os metadados chegarem; o avanço real é o onEnded
-      stallRef.current = setTimeout(advance, METADATA_GUARD_MS);
-    } else {
-      timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
-    }
+    timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (stallRef.current) clearTimeout(stallRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  // quando os metadados do vídeo chegam, a rede de segurança passa a valer a duração real
-  const handleVideoMetadata = useCallback((seconds: number) => {
-    if (stallRef.current) clearTimeout(stallRef.current);
-    if (!isFinite(seconds) || seconds <= 0) return;
-    stallRef.current = setTimeout(() => setIndex((i) => i + 1), seconds * 1000 + 8000);
-  }, []);
+  // reinicia tentativas/spinner a cada mídia
+  useEffect(() => {
+    retriesRef.current = 0;
+    setVideoNonce(0);
+    setBuffering(false);
+  }, [index]);
+
+  const handleMediaError = useCallback(() => {
+    if (currentRef.current?.type === "video" && retriesRef.current < 2) {
+      retriesRef.current += 1;
+      setVideoNonce((n) => n + 1);
+      return;
+    }
+    advance();
+  }, [advance]);
+
 
   const overlays = (
     <>
@@ -698,7 +710,7 @@ export function TvPlayer() {
         {back ? <MediaLayer layer={back} muted objectFit={objectFit} volume={0} /> : null}
         {front ? (
           <MediaLayer
-            key={front.key}
+            key={front.key + "-" + videoNonce}
             layer={front}
             muted={tv?.muted !== false}
             volume={volume}
@@ -706,11 +718,16 @@ export function TvPlayer() {
             fade
             videoRef={videoRef}
             onEnded={advance}
-            onError={advance}
-            onMetadata={handleVideoMetadata}
+            onError={handleMediaError}
+            onWaiting={() => setBuffering(true)}
+            onResume={() => setBuffering(false)}
           />
         ) : null}
+        {buffering ? <BufferSpinner /> : null}
       </div>
+
+      <Preloader item={nextItem} />
+
 
       {multizone ? (
         <>
@@ -797,7 +814,8 @@ function MediaLayer({
   videoRef,
   onEnded,
   onError,
-  onMetadata,
+  onWaiting,
+  onResume,
 }: {
   layer: Layer;
   muted: boolean;
@@ -807,14 +825,17 @@ function MediaLayer({
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
   onError?: () => void;
-  onMetadata?: (seconds: number) => void;
+  onWaiting?: () => void;
+  onResume?: () => void;
 }) {
   const localRef = useRef<HTMLVideoElement | null>(null);
 
+  // volume nativo (sem Web Audio) para preservar a aceleração de hardware
   useEffect(() => {
-    if (layer.item.type !== "video") return;
-    attachAudioChain(localRef.current, muted ? 0 : volume);
-  }, [layer.item.type, layer.src, muted, volume]);
+    const el = localRef.current;
+    if (!el) return;
+    el.volume = Math.min(1, Math.max(0, volume / 100));
+  }, [layer.src, volume]);
 
   const base: React.CSSProperties = {
     position: "absolute",
@@ -822,6 +843,9 @@ function MediaLayer({
     width: "100%",
     height: "100%",
     objectFit,
+    transform: "translate3d(0, 0, 0)",
+    backfaceVisibility: "hidden",
+    willChange: "transform",
     animation: fade ? "cf-fade-in 0.7s ease-out" : undefined,
   };
 
@@ -836,19 +860,23 @@ function MediaLayer({
         autoPlay
         muted={muted}
         playsInline
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(e) => {
-          resumeAudio();
-          if (onMetadata) onMetadata(e.currentTarget.duration);
+          e.currentTarget.volume = Math.min(1, Math.max(0, volume / 100));
         }}
         onEnded={onEnded}
         onError={onError}
+        onWaiting={onWaiting}
+        onStalled={onWaiting}
+        onPlaying={onResume}
+        onCanPlay={onResume}
         style={base}
       />
     );
   }
   return <img src={layer.src} alt={layer.item.title} onError={onError} style={base} />;
 }
+
 
 function SponsorRail({
   sponsors,
@@ -972,6 +1000,13 @@ function Badge({ children }: { children: React.ReactNode }) {
  * sentido anti-horário, trocando largura/altura para ocupar a tela inteira.
  */
 function Stage({ children, portrait }: { children: React.ReactNode; portrait: boolean }) {
+  const gpu: React.CSSProperties = {
+    transform: "translate3d(0, 0, 0)",
+    backfaceVisibility: "hidden",
+    WebkitBackfaceVisibility: "hidden",
+    willChange: "transform",
+  } as React.CSSProperties;
+
   const inner: React.CSSProperties = portrait
     ? {
         position: "absolute",
@@ -979,8 +1014,10 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         left: "50%",
         width: "100vh",
         height: "100vw",
-        transform: "translate(-50%, -50%) rotate(-90deg)",
+        transform: "translate(-50%, -50%) rotate(-90deg) translate3d(0, 0, 0)",
         transformOrigin: "center center",
+        backfaceVisibility: "hidden",
+        willChange: "transform",
         backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
@@ -994,6 +1031,7 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
+        ...gpu,
       };
 
   return (
@@ -1006,9 +1044,48 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
         bottom: 0,
         backgroundColor: "#000000",
         overflow: "hidden",
+        ...gpu,
       }}
     >
       <div style={inner}>{children}</div>
     </div>
   );
 }
+
+/** Spinner discreto exibido apenas enquanto o vídeo enche o buffer. */
+function BufferSpinner() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: "28px",
+        bottom: "28px",
+        width: "46px",
+        height: "46px",
+        borderRadius: "50%",
+        border: "5px solid rgba(255,255,255,0.25)",
+        borderTopColor: BRAND.yellow,
+        animation: "cf-spin 0.9s linear infinite",
+      }}
+    />
+  );
+}
+
+/** Pré-carrega a próxima mídia da playlist fora da tela. */
+function Preloader({ item }: { item: ResolvedItem | null }) {
+  if (!item) return null;
+  if (item.type === "video") {
+    return (
+      <video
+        key={item.media_id}
+        src={item.url}
+        preload="auto"
+        muted
+        playsInline
+        style={{ display: "none" }}
+      />
+    );
+  }
+  return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
+}
+
