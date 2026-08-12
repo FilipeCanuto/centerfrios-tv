@@ -414,7 +414,10 @@ export function TvPlayer() {
   }, []);
 
   const current = items.length ? items[index % items.length] : null;
+  const nextItem = items.length > 1 ? items[(index + 1) % items.length] : null;
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
+  currentRef.current = current;
+
 
   // ---------- QR code dinâmico ----------
   useEffect(() => {
