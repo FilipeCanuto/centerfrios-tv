@@ -7,9 +7,7 @@ import {
   TV_SELECT_COLUMNS,
   TV_STORAGE,
   getDeviceUuid,
-  parsePlaylistItems,
   type EventPhoto,
-  type MediaRow,
   type ResolvedItem,
   type TvRow,
 } from "@/lib/centerfrios";
