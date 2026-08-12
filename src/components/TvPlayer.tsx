@@ -484,31 +484,35 @@ export function TvPlayer() {
     return () => clearTimeout(t);
   }, [back?.key]);
 
-  // ---------- temporizador: imagens por duração, vídeos até o fim ----------
+  // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (stallRef.current) clearTimeout(stallRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
+    if (current.type === "video") return;
 
-    if (current.type === "video") {
-      // apenas rede de segurança até os metadados chegarem; o avanço real é o onEnded
-      stallRef.current = setTimeout(advance, METADATA_GUARD_MS);
-    } else {
-      timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
-    }
+    timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (stallRef.current) clearTimeout(stallRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  // quando os metadados do vídeo chegam, a rede de segurança passa a valer a duração real
-  const handleVideoMetadata = useCallback((seconds: number) => {
-    if (stallRef.current) clearTimeout(stallRef.current);
-    if (!isFinite(seconds) || seconds <= 0) return;
-    stallRef.current = setTimeout(() => setIndex((i) => i + 1), seconds * 1000 + 8000);
-  }, []);
+  // reinicia tentativas/spinner a cada mídia
+  useEffect(() => {
+    retriesRef.current = 0;
+    setVideoNonce(0);
+    setBuffering(false);
+  }, [index]);
+
+  const handleMediaError = useCallback(() => {
+    if (currentRef.current?.type === "video" && retriesRef.current < 2) {
+      retriesRef.current += 1;
+      setVideoNonce((n) => n + 1);
+      return;
+    }
+    advance();
+  }, [advance]);
+
 
   const overlays = (
     <>
