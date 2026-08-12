@@ -99,8 +99,8 @@ export function TvPlayer() {
       window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
       tvIdRef.current = res.id;
       setCode(res.pairing_code);
-      setStatus("pairing");
 
+      // não mostra o código antes de saber se a TV já está pareada
       await refreshTv(res.id);
     }
 
@@ -197,7 +197,8 @@ export function TvPlayer() {
       setOffline(false);
       const row = data as unknown as TvRow;
       setTv(row);
-      if (!row.is_paired) {
+      // já pareada (ou com playlist vinculada) → inicia direto, sem tela de código
+      if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         setStatus("pairing");
         return;
       }
@@ -244,11 +245,12 @@ export function TvPlayer() {
           const row = payload.new as unknown as TvRow;
           const prev = tvRef.current;
           setTv(row);
-          if (!row.is_paired) setStatus("pairing");
+          if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
           else if (
             !prev ||
             row.playlist_id !== prev.playlist_id ||
-            row.event_mode !== prev.event_mode
+            row.event_mode !== prev.event_mode ||
+            row.is_paired !== prev.is_paired
           ) {
             loadPlaylist(row.playlist_id, row.event_mode);
           }
@@ -342,20 +344,27 @@ export function TvPlayer() {
       if (!id) return;
       const { data } = await supabase
         .from("tvs")
-        .select("id,is_paired,playlist_id,event_mode")
+        .select("id,is_paired,playlist_id,event_mode,layout_mode,orientation,command")
         .eq("id", id)
         .maybeSingle();
       if (!data) return;
-      const row = data as unknown as Pick<TvRow, "is_paired" | "playlist_id" | "event_mode">;
+      const row = data as unknown as Pick<
+        TvRow,
+        "is_paired" | "playlist_id" | "event_mode" | "layout_mode" | "orientation" | "command"
+      >;
       const prev = tvRef.current;
       if (
         !prev ||
         prev.is_paired !== row.is_paired ||
         prev.playlist_id !== row.playlist_id ||
-        prev.event_mode !== row.event_mode
+        prev.event_mode !== row.event_mode ||
+        prev.layout_mode !== row.layout_mode ||
+        prev.orientation !== row.orientation
       ) {
         refreshTv(id);
       }
+      // fallback do botão "Forçar sincronização" quando o WebSocket está bloqueado
+      runCommand(row.command);
     }, 4000);
 
     return () => {
@@ -363,7 +372,7 @@ export function TvPlayer() {
       clearInterval(revalidate);
       clearInterval(guard);
     };
-  }, [refreshTv]);
+  }, [refreshTv, runCommand]);
 
 
   // ---------- reload preventivo diário às 03:00 ----------
@@ -566,7 +575,9 @@ export function TvPlayer() {
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
-            Nenhum conteúdo vinculado a esta TV
+            {tv && tv.playlist_id
+              ? "Playlist vinculada não possui mídias cadastradas"
+              : "Nenhum conteúdo vinculado a esta TV"}
           </p>
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
