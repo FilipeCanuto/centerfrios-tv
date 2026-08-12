@@ -797,7 +797,8 @@ function MediaLayer({
   videoRef,
   onEnded,
   onError,
-  onMetadata,
+  onWaiting,
+  onResume,
 }: {
   layer: Layer;
   muted: boolean;
@@ -807,14 +808,17 @@ function MediaLayer({
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
   onError?: () => void;
-  onMetadata?: (seconds: number) => void;
+  onWaiting?: () => void;
+  onResume?: () => void;
 }) {
   const localRef = useRef<HTMLVideoElement | null>(null);
 
+  // volume nativo (sem Web Audio) para preservar a aceleração de hardware
   useEffect(() => {
-    if (layer.item.type !== "video") return;
-    attachAudioChain(localRef.current, muted ? 0 : volume);
-  }, [layer.item.type, layer.src, muted, volume]);
+    const el = localRef.current;
+    if (!el) return;
+    el.volume = Math.min(1, Math.max(0, volume / 100));
+  }, [layer.src, volume]);
 
   const base: React.CSSProperties = {
     position: "absolute",
@@ -822,6 +826,9 @@ function MediaLayer({
     width: "100%",
     height: "100%",
     objectFit,
+    transform: "translate3d(0, 0, 0)",
+    backfaceVisibility: "hidden",
+    willChange: "transform",
     animation: fade ? "cf-fade-in 0.7s ease-out" : undefined,
   };
 
@@ -836,19 +843,23 @@ function MediaLayer({
         autoPlay
         muted={muted}
         playsInline
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(e) => {
-          resumeAudio();
-          if (onMetadata) onMetadata(e.currentTarget.duration);
+          e.currentTarget.volume = Math.min(1, Math.max(0, volume / 100));
         }}
         onEnded={onEnded}
         onError={onError}
+        onWaiting={onWaiting}
+        onStalled={onWaiting}
+        onPlaying={onResume}
+        onCanPlay={onResume}
         style={base}
       />
     );
   }
   return <img src={layer.src} alt={layer.item.title} onError={onError} style={base} />;
 }
+
 
 function SponsorRail({
   sponsors,
