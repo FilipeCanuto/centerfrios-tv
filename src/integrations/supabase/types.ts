@@ -292,6 +292,18 @@ export type Database = {
     }
     Functions: {
       cleanup_ghost_tvs: { Args: never; Returns: number }
+      get_tv_playlist_items: {
+        Args: { p_playlist_id: string }
+        Returns: {
+          duration: number
+          media_id: string
+          qr_url: string
+          sort_order: number
+          title: string
+          type: string
+          url: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
