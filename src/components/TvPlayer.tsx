@@ -245,11 +245,12 @@ export function TvPlayer() {
           const row = payload.new as unknown as TvRow;
           const prev = tvRef.current;
           setTv(row);
-          if (!row.is_paired) setStatus("pairing");
+          if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
           else if (
             !prev ||
             row.playlist_id !== prev.playlist_id ||
-            row.event_mode !== prev.event_mode
+            row.event_mode !== prev.event_mode ||
+            row.is_paired !== prev.is_paired
           ) {
             loadPlaylist(row.playlist_id, row.event_mode);
           }
