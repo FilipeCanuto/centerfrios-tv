@@ -155,6 +155,28 @@ const STORAGE_KEYS = {
   deviceUuid: "centerfrios_device_uuid",
 };
 
+function readCookie(name: string): string | null {
+  try {
+    var parts = String(document.cookie || "").split(";");
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].replace(/^\s+/, "");
+      if (p.indexOf(name + "=") === 0) return decodeURIComponent(p.slice(name.length + 1));
+    }
+  } catch (e) {
+    /* cookies indisponíveis */
+  }
+  return null;
+}
+
+function writeCookie(name: string, value: string): void {
+  try {
+    document.cookie =
+      name + "=" + encodeURIComponent(value) + ";path=/;max-age=" + 60 * 60 * 24 * 3650 + ";SameSite=Lax";
+  } catch (e) {
+    /* cookies indisponíveis */
+  }
+}
+
 export function getDeviceUuid(): string {
   var existing: string | null = null;
   try {
@@ -162,7 +184,19 @@ export function getDeviceUuid(): string {
   } catch (e) {
     existing = null;
   }
-  if (existing && existing.length >= 8) return existing;
+  if (!existing || existing.length < 8) existing = readCookie(STORAGE_KEYS.deviceUuid);
+
+  if (existing && existing.length >= 8) {
+    // reescreve nos dois lugares (kiosk pode limpar um deles)
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.deviceUuid, existing);
+    } catch (e) {
+      /* storage indisponível */
+    }
+    writeCookie(STORAGE_KEYS.deviceUuid, existing);
+    return existing;
+  }
+
   var hex = "0123456789abcdef";
   var s = "";
   for (var i = 0; i < 32; i++) s += hex.charAt(Math.floor(Math.random() * 16));
@@ -172,6 +206,7 @@ export function getDeviceUuid(): string {
   } catch (e) {
     /* storage indisponível */
   }
+  writeCookie(STORAGE_KEYS.deviceUuid, uuid);
   return uuid;
 }
 
