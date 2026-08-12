@@ -45,12 +45,17 @@ export function TvPlayer() {
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [buffering, setBuffering] = useState(false);
+  const [videoNonce, setVideoNonce] = useState(0);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
+  const retriesRef = useRef(0);
+  const currentRef = useRef<ResolvedItem | null>(null);
+
 
   tvRef.current = tv;
 
