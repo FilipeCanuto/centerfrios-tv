@@ -23,7 +23,7 @@ import {
   saveManifest,
 } from "@/lib/player-cache";
 
-type Status = "boot" | "pairing" | "playing" | "empty";
+type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
 const MANIFEST_KEY = "playlist";
