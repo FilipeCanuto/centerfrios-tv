@@ -264,6 +264,11 @@ export function TvPlayer() {
         const t = tvRef.current;
         if (t) loadPlaylist(t.playlist_id, t.event_mode);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "media" }, () => {
+        const t = tvRef.current;
+        if (t && t.playlist_id) loadPlaylist(t.playlist_id, t.event_mode);
+      })
+
       .on("postgres_changes", { event: "*", schema: "public", table: "event_photos" }, () => {
         const t = tvRef.current;
         if (t && t.event_mode) loadPlaylist(t.playlist_id, true);
