@@ -344,20 +344,27 @@ export function TvPlayer() {
       if (!id) return;
       const { data } = await supabase
         .from("tvs")
-        .select("id,is_paired,playlist_id,event_mode")
+        .select("id,is_paired,playlist_id,event_mode,layout_mode,orientation,command")
         .eq("id", id)
         .maybeSingle();
       if (!data) return;
-      const row = data as unknown as Pick<TvRow, "is_paired" | "playlist_id" | "event_mode">;
+      const row = data as unknown as Pick<
+        TvRow,
+        "is_paired" | "playlist_id" | "event_mode" | "layout_mode" | "orientation" | "command"
+      >;
       const prev = tvRef.current;
       if (
         !prev ||
         prev.is_paired !== row.is_paired ||
         prev.playlist_id !== row.playlist_id ||
-        prev.event_mode !== row.event_mode
+        prev.event_mode !== row.event_mode ||
+        prev.layout_mode !== row.layout_mode ||
+        prev.orientation !== row.orientation
       ) {
         refreshTv(id);
       }
+      // fallback do botão "Forçar sincronização" quando o WebSocket está bloqueado
+      runCommand(row.command);
     }, 4000);
 
     return () => {
