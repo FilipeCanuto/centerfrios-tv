@@ -698,7 +698,7 @@ export function TvPlayer() {
         {back ? <MediaLayer layer={back} muted objectFit={objectFit} volume={0} /> : null}
         {front ? (
           <MediaLayer
-            key={front.key}
+            key={front.key + "-" + videoNonce}
             layer={front}
             muted={tv?.muted !== false}
             volume={volume}
@@ -706,11 +706,16 @@ export function TvPlayer() {
             fade
             videoRef={videoRef}
             onEnded={advance}
-            onError={advance}
-            onMetadata={handleVideoMetadata}
+            onError={handleMediaError}
+            onWaiting={() => setBuffering(true)}
+            onResume={() => setBuffering(false)}
           />
         ) : null}
+        {buffering ? <BufferSpinner /> : null}
       </div>
+
+      <Preloader item={nextItem} />
+
 
       {multizone ? (
         <>
