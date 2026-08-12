@@ -99,8 +99,8 @@ export function TvPlayer() {
       window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
       tvIdRef.current = res.id;
       setCode(res.pairing_code);
-      setStatus("pairing");
 
+      // não mostra o código antes de saber se a TV já está pareada
       await refreshTv(res.id);
     }
 
