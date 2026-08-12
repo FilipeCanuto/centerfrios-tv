@@ -336,11 +336,36 @@ export function TvPlayer() {
     beat();
     const interval = setInterval(beat, HEARTBEAT_MS);
     const revalidate = setInterval(() => refreshTv(tvIdRef.current), 60000);
+
+    // fallback híbrido: se o WebSocket for bloqueado, detecta pareamento em 4s
+    const guard = setInterval(async () => {
+      const id = tvIdRef.current;
+      if (!id) return;
+      const { data } = await supabase
+        .from("tvs")
+        .select("id,is_paired,playlist_id,event_mode")
+        .eq("id", id)
+        .maybeSingle();
+      if (!data) return;
+      const row = data as unknown as Pick<TvRow, "is_paired" | "playlist_id" | "event_mode">;
+      const prev = tvRef.current;
+      if (
+        !prev ||
+        prev.is_paired !== row.is_paired ||
+        prev.playlist_id !== row.playlist_id ||
+        prev.event_mode !== row.event_mode
+      ) {
+        refreshTv(id);
+      }
+    }, 4000);
+
     return () => {
       clearInterval(interval);
       clearInterval(revalidate);
+      clearInterval(guard);
     };
   }, [refreshTv]);
+
 
   // ---------- reload preventivo diário às 03:00 ----------
   useEffect(() => {
