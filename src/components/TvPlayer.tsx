@@ -12,7 +12,7 @@ import {
   type ResolvedItem,
   type TvRow,
 } from "@/lib/centerfrios";
-import { attachAudioChain, resumeAudio } from "@/lib/audio-chain";
+
 import {
   loadManifest,
   precacheMedia,
