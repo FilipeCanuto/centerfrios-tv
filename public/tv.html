@@ -157,15 +157,32 @@
     return "dev-" + s + "-" + String(new Date().getTime());
   }
 
+  function cookieGet(name) {
+    try {
+      var parts = String(document.cookie || "").split(";");
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i].replace(/^\s+/, "");
+        if (p.indexOf(name + "=") === 0) { return decodeURIComponent(p.slice(name.length + 1)); }
+      }
+    } catch (e) {}
+    return null;
+  }
+  function cookieSet(name, value) {
+    try {
+      document.cookie = name + "=" + encodeURIComponent(value) + ";path=/;max-age=315360000;SameSite=Lax";
+    } catch (e) {}
+  }
+
   function boot() {
-    var code = ls(K_CODE);
-    if (!code) { code = genCode(); lsSet(K_CODE, code); }
-    showPairing(code);
+    codeEl.innerHTML = "";
+    document.getElementsByClassName("lbl")[0].innerHTML = "Conectando ao servidor e gerando c&oacute;digo...";
+    pairEl.className = "";
 
-    var uuid = ls(K_UUID);
-    if (!uuid) { uuid = genUuid(); lsSet(K_UUID, uuid); }
+    var uuid = ls(K_UUID) || cookieGet(K_UUID);
+    if (!uuid) { uuid = genUuid(); }
+    lsSet(K_UUID, uuid);
+    cookieSet(K_UUID, uuid);
 
-    tvId = ls(K_ID);
     var cached = ls(K_PL);
     if (cached) {
       try {
@@ -174,20 +191,28 @@
       } catch (e) {}
     }
 
-    registerOnce(uuid, code);
+    registerOnce(uuid, 0);
   }
 
-  function registerOnce(uuid, code) {
-    // register_tv_device reutiliza a TV do aparelho; so insere se nao existir
-    req("POST", "/rest/v1/rpc/register_tv_device", { _device_uuid: uuid, _code: code }, function (err, data) {
-      if (!err && data && data.id) {
+  function registerOnce(uuid, attempt) {
+    // codigo de pareamento e SEMPRE gerado pelo servidor
+    req("POST", "/rest/v1/rpc/register_tv_device", { p_device_uuid: uuid }, function (err, data) {
+      if (!err && data && data.id && data.pairing_code) {
         tvId = data.id;
         lsSet(K_ID, data.id);
-        if (data.code && data.code !== code) { lsSet(K_CODE, data.code); showPairing(data.code); }
+        lsSet(K_CODE, data.pairing_code);
+        document.getElementsByClassName("lbl")[0].innerHTML = "C&oacute;digo de pareamento desta TV";
+        showPairing(data.pairing_code);
+        ready();
+        return;
       }
-      ready();
+      var delays = [3000, 5000, 10000];
+      var wait = delays[attempt < delays.length ? attempt : delays.length - 1];
+      document.getElementsByClassName("lbl")[0].innerHTML = "Aguardando resposta da nuvem... Revalidando em " + (wait / 1000) + "s";
+      setTimeout(function () { registerOnce(uuid, attempt + 1); }, wait);
     });
   }
+
 
 
   function ready() {
