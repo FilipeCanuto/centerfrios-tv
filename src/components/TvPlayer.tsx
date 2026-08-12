@@ -6,7 +6,7 @@ import {
   LOGO_URL,
   TV_SELECT_COLUMNS,
   TV_STORAGE,
-  generatePairingCode,
+  getDeviceUuid,
   getDeviceUuid,
   parsePlaylistItems,
   type EventPhoto,
