@@ -217,15 +217,28 @@ export function TvPlayer() {
         setStatus((s) => (s === "playing" ? s : "pairing"));
         return;
       }
-      const { data, error } = await supabase
-        .from("tvs")
-        .select(TV_SELECT_COLUMNS)
-        .eq("id", id)
-        .maybeSingle();
-      if (error || !data) {
+      let row: TvRow | null = null;
+      try {
+        const { data, error } = await supabase
+          .from("tvs")
+          .select(TV_SELECT_COLUMNS)
+          .eq("id", id)
+          .maybeSingle();
+        if (error || !data) {
+          setOffline(true);
+          return;
+        }
+        row = data as unknown as TvRow;
+      } catch (err) {
+        console.warn("[CENTERFRIOS] falha ao consultar TV:", err);
         setOffline(true);
         return;
       }
+      if (!row) {
+        setOffline(true);
+        return;
+      }
+
       setOffline(false);
       const row = data as unknown as TvRow;
       setTv(row);
