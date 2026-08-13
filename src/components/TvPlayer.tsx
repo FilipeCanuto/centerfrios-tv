@@ -125,72 +125,91 @@ export function TvPlayer() {
   const loadPlaylist = useCallback(async (playlistId: string | null, eventMode: boolean) => {
     const resolved: ResolvedItem[] = [];
 
-    if (playlistId) {
-      const { data: rows, error } = await supabase.rpc("get_tv_playlist_items", {
-        p_playlist_id: playlistId,
-      });
+    try {
+      if (playlistId) {
+        const { data: rows, error } = await supabase.rpc("get_tv_playlist_items", {
+          p_playlist_id: playlistId,
+        });
 
-      if (!error && rows) {
-        (
-          rows as unknown as Array<{
-            media_id: string;
-            title: string;
-            url: string;
-            type: string;
-            duration: number | null;
-            qr_url: string | null;
-          }>
-        ).forEach((r) => {
-          if (!r.url) return;
+        if (!error && rows) {
+          (
+            rows as unknown as Array<{
+              media_id: string;
+              title: string;
+              url: string;
+              type: string;
+              duration: number | null;
+              qr_url: string | null;
+            }>
+          ).forEach((r) => {
+            if (!r || !r.url) return;
+            resolved.push({
+              media_id: r.media_id,
+              url: r.url,
+              type: r.type,
+              title: r.title,
+              qr_url: r.qr_url,
+              duration: r.duration || 10,
+            });
+          });
+        }
+      }
+
+      if (eventMode) {
+        const { data: photos } = await supabase
+          .from("event_photos")
+          .select("id,image_url,status,featured,created_at")
+          .eq("status", "approved")
+          .order("created_at", { ascending: false })
+          .limit(40);
+        ((photos || []) as unknown as EventPhoto[]).forEach((p) => {
+          if (!p || !p.image_url) return;
           resolved.push({
-            media_id: r.media_id,
-            url: r.url,
-            type: r.type,
-            title: r.title,
-            qr_url: r.qr_url,
-            duration: r.duration || 10,
+            media_id: "event-" + p.id,
+            url: p.image_url,
+            type: "image",
+            title: "Mural do evento",
+            duration: 8,
           });
         });
       }
-    }
 
-    if (eventMode) {
-      const { data: photos } = await supabase
-        .from("event_photos")
-        .select("id,image_url,status,featured,created_at")
-        .eq("status", "approved")
-        .order("created_at", { ascending: false })
-        .limit(40);
-      ((photos || []) as unknown as EventPhoto[]).forEach((p) => {
-        if (!p.image_url) return;
-        resolved.push({
-          media_id: "event-" + p.id,
-          url: p.image_url,
-          type: "image",
-          title: "Mural do evento",
-          duration: 8,
-        });
-      });
-    }
-
-    if (resolved.length === 0) {
-      const cached = await loadManifest(MANIFEST_KEY);
-      if (cached && cached.length) {
-        setItems(cached);
-        setStatus("playing");
+      if (resolved.length === 0) {
+        const cached = await loadManifest(MANIFEST_KEY);
+        if (cached && cached.length) {
+          setItems(cached);
+          setStatus("playing");
+          return;
+        }
+        setItems([]);
+        setStatus("empty");
         return;
+      }
+
+      setItems(resolved);
+      setIndex(0);
+      setStatus("playing");
+      saveManifest(MANIFEST_KEY, resolved);
+      precacheMedia(resolved).then(() => pruneCache(resolved));
+    } catch (err) {
+      console.warn("[CENTERFRIOS] falha ao carregar playlist:", err);
+      try {
+        const cached = await loadManifest(MANIFEST_KEY);
+        if (cached && cached.length) {
+          setItems(cached);
+          setStatus("playing");
+          return;
+        }
+      } catch {
+        /* cache indisponível */
       }
       setItems([]);
       setStatus("empty");
-      return;
+    } finally {
+      setStatus((s) => (s === "boot" || s === "connecting" ? "empty" : s));
     }
-
-    setItems(resolved);
-    setIndex(0);
-    setStatus("playing");
-    saveManifest(MANIFEST_KEY, resolved);
-    precacheMedia(resolved).then(() => pruneCache(resolved));
   }, []);
+
 
   const refreshTv = useCallback(
     async (id: string | null) => {
