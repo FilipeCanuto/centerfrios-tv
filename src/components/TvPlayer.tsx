@@ -501,18 +501,42 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
 
-  // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
+  // ---------- temporizador: imagens por duração; vídeos com watchdog de segurança ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
-    if (current.type === "video") return;
 
-    timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
+    if (current.type === "video") {
+      // fallback genérico até os metadados chegarem (35s)
+      timerRef.current = setTimeout(() => {
+        console.warn("[player] watchdog genérico disparado, avançando mídia");
+        advance();
+      }, 35000);
+    } else {
+      timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
+    }
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
+
+  // watchdog dinâmico: duração real do vídeo + 5s
+  const handleVideoMetadata = useCallback(
+    (durationSeconds: number) => {
+      if (!durationSeconds || !isFinite(durationSeconds) || durationSeconds <= 0) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(
+        () => {
+          console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
+          advance();
+        },
+        (durationSeconds + 5) * 1000
+      );
+    },
+    [advance]
+  );
 
   // reinicia spinner a cada mídia
   useEffect(() => {
@@ -530,7 +554,7 @@ export function TvPlayer() {
         info || ""
       );
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 3000);
+      errorTimerRef.current = setTimeout(advance, 1000);
     },
     [advance]
   );
