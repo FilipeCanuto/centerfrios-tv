@@ -1130,21 +1130,10 @@ function BufferSpinner() {
   );
 }
 
-/** Pré-carrega a próxima mídia da playlist fora da tela. */
+/** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  if (!item) return null;
-  if (item.type === "video") {
-    return (
-      <video
-        key={item.media_id}
-        src={item.url}
-        preload="auto"
-        muted
-        playsInline
-        style={{ display: "none" }}
-      />
-    );
-  }
+  if (!item || item.type === "video") return null;
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
+
 
