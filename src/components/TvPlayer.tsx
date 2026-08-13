@@ -46,6 +46,8 @@ export function TvPlayer() {
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
+
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -573,10 +575,12 @@ export function TvPlayer() {
   // reinicia spinner a cada mídia
   useEffect(() => {
     setBuffering(false);
+    setMediaFailed(false);
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, [index]);
+
 
   const handleMediaError = useCallback(
     (info?: string) => {
@@ -585,11 +589,13 @@ export function TvPlayer() {
         currentRef.current?.title || "",
         info || ""
       );
+      setMediaFailed(true);
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 1000);
+      errorTimerRef.current = setTimeout(advance, 2000);
     },
     [advance]
   );
+
 
 
 
@@ -777,6 +783,15 @@ export function TvPlayer() {
   }
 
   const tickerVisible = multizone && tickerPosition !== "hidden";
+  const mediaBox: React.CSSProperties = {
+    backgroundColor: "#000000",
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  };
   const mainZone: React.CSSProperties = tickerVisible
     ? {
         position: "absolute",
@@ -784,8 +799,9 @@ export function TvPlayer() {
         right: 0,
         top: tickerPosition === "top" ? "90px" : 0,
         bottom: tickerPosition === "top" ? 0 : "90px",
+        ...mediaBox,
       }
-    : { position: "absolute", inset: 0 };
+    : { position: "absolute", inset: 0, ...mediaBox };
 
   const corner = cornerStyle(qrPosition);
 
@@ -808,7 +824,27 @@ export function TvPlayer() {
             onResume={() => setBuffering(false)}
           />
         ) : null}
-        {buffering ? <BufferSpinner /> : null}
+        {mediaFailed ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#000000",
+              color: BRAND.yellow,
+              fontSize: "30px",
+              fontWeight: 700,
+              textAlign: "center",
+              padding: "24px",
+            }}
+          >
+            Mídia indisponível — Carregando próxima em 2s...
+          </div>
+        ) : null}
+        {buffering && !mediaFailed ? <BufferSpinner /> : null}
+
         <div
           style={{
             position: "absolute",
@@ -935,6 +971,24 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
+  // play explícito (Fire OS bloqueia autoplay com som)
+  useEffect(() => {
+    const el = localRef.current;
+    if (!el || layer.item.type !== "video") return;
+    el.muted = muted;
+    const playPromise = el.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch((error) => {
+        console.warn("Autoplay bloqueado pelo Android, tentando com som mudo:", error);
+        if (localRef.current) {
+          localRef.current.muted = true;
+          localRef.current.play().catch(() => undefined);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layer.src, muted]);
+
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
     return () => {
@@ -951,16 +1005,16 @@ function MediaLayer({
   }, []);
 
   const base: React.CSSProperties = {
-    position: "absolute",
-    inset: 0,
     width: "100%",
     height: "100%",
     objectFit,
+    backgroundColor: "#000000",
     transform: "translate3d(0, 0, 0)",
     backfaceVisibility: "hidden",
     willChange: "transform",
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
+
 
   const mediaKey = layer.item.media_id || layer.src;
 
@@ -975,9 +1029,11 @@ function MediaLayer({
         src={layer.src}
         autoPlay
         muted={muted}
+        controls={false}
         playsInline
         disablePictureInPicture
         preload="auto"
+
         onLoadedMetadata={(e) => {
           const el = e.currentTarget;
           el.volume = Math.min(1, Math.max(0, volume / 100));
