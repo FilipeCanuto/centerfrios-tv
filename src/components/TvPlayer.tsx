@@ -721,10 +721,9 @@ export function TvPlayer() {
   return (
     <Stage portrait={portrait}>
       <div style={mainZone}>
-        {back ? <MediaLayer layer={back} muted objectFit={objectFit} volume={0} /> : null}
         {front ? (
           <MediaLayer
-            key={front.key + "-" + videoNonce}
+            key={front.key}
             layer={front}
             muted={tv?.muted !== false}
             volume={volume}
@@ -738,9 +737,20 @@ export function TvPlayer() {
           />
         ) : null}
         {buffering ? <BufferSpinner /> : null}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: "#04122b",
+            opacity: covered || !front ? 1 : 0,
+            transition: "opacity " + FADE_MS + "ms ease",
+            pointerEvents: "none",
+          }}
+        />
       </div>
 
       <Preloader item={nextItem} />
+
 
 
       {multizone ? (
