@@ -585,11 +585,13 @@ export function TvPlayer() {
         currentRef.current?.title || "",
         info || ""
       );
+      setMediaFailed(true);
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 1000);
+      errorTimerRef.current = setTimeout(advance, 2000);
     },
     [advance]
   );
+
 
 
 
