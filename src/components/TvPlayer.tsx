@@ -39,22 +39,22 @@ export function TvPlayer() {
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [front, setFront] = useState<Layer | null>(null);
-  const [back, setBack] = useState<Layer | null>(null);
+  const [covered, setCovered] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
-  const [videoNonce, setVideoNonce] = useState(0);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
-  const retriesRef = useRef(0);
   const currentRef = useRef<ResolvedItem | null>(null);
+
 
 
   tvRef.current = tv;
