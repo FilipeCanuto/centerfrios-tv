@@ -966,9 +966,11 @@ function MediaLayer({
   objectFit,
   fade,
   videoRef,
+  audioContextRef,
   onEnded,
   onMetadata,
   onError,
+  onFatal,
   onWaiting,
   onResume,
 }: {
@@ -978,9 +980,11 @@ function MediaLayer({
   objectFit: "cover" | "contain";
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
+  audioContextRef?: React.MutableRefObject<AudioContext | null>;
   onEnded?: () => void;
   onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
+  onFatal?: () => void;
   onWaiting?: () => void;
   onResume?: () => void;
 }) {
@@ -993,18 +997,33 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
-  // play explícito (Fire OS bloqueia autoplay com som)
+  // play explícito com bypass de autoplay nativo (Fire OS / Chromium)
   useEffect(() => {
     const el = localRef.current;
     if (!el || layer.item.type !== "video") return;
+
+    if (!audioContextRef?.current && typeof AudioContext !== "undefined") {
+      try {
+        audioContextRef.current = new AudioContext();
+      } catch {
+        /* audio API indisponível */
+      }
+    }
+    if (audioContextRef?.current && audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
+
     el.muted = muted;
     const playPromise = el.play();
-    if (playPromise && typeof playPromise.catch === "function") {
+    if (playPromise !== undefined) {
       playPromise.catch((error) => {
-        console.warn("Autoplay bloqueado pelo Android, tentando com som mudo:", error);
+        console.warn("Autoplay com som bloqueado. Tentando modo mudo forçado:", error);
         if (localRef.current) {
           localRef.current.muted = true;
-          localRef.current.play().catch(() => undefined);
+          localRef.current.play().catch((e) => {
+            console.error("Falha fatal de reprodução:", e);
+            setTimeout(() => onFatal?.(), 2000);
+          });
         }
       });
     }
@@ -1064,10 +1083,12 @@ function MediaLayer({
           src={layer.src}
           autoPlay
           playsInline
+          defaultMuted={true}
           muted={muted}
           preload="auto"
           controls={false}
           disablePictureInPicture
+          className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
           onLoadedMetadata={(e) => {
             const el = e.currentTarget;
             el.volume = Math.min(1, Math.max(0, volume / 100));
