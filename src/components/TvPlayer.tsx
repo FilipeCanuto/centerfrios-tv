@@ -28,7 +28,7 @@ type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 const MANIFEST_KEY = "playlist";
 const HEARTBEAT_MS = 8000;
 const METADATA_GUARD_MS = 20000;
-const FADE_MS = 700;
+const FADE_MS = 200;
 
 export function TvPlayer() {
   const [status, setStatus] = useState<Status>("boot");
