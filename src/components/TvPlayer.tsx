@@ -848,7 +848,7 @@ function MediaLayer({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
-  onError?: () => void;
+  onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
 }) {
@@ -861,6 +861,21 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
+  // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
+  useEffect(() => {
+    return () => {
+      const el = localRef.current;
+      if (!el) return;
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
   const base: React.CSSProperties = {
     position: "absolute",
     inset: 0,
@@ -870,7 +885,7 @@ function MediaLayer({
     transform: "translate3d(0, 0, 0)",
     backfaceVisibility: "hidden",
     willChange: "transform",
-    animation: fade ? "cf-fade-in 0.7s ease-out" : undefined,
+    animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
 
   if (layer.item.type === "video") {
@@ -884,12 +899,24 @@ function MediaLayer({
         autoPlay
         muted={muted}
         playsInline
-        preload="auto"
+        disablePictureInPicture
+        preload="metadata"
         onLoadedMetadata={(e) => {
-          e.currentTarget.volume = Math.min(1, Math.max(0, volume / 100));
+          const el = e.currentTarget;
+          el.volume = Math.min(1, Math.max(0, volume / 100));
+          const play = el.play();
+          if (play && typeof play.catch === "function") {
+            play.catch(() => {
+              el.muted = true;
+              el.play().catch(() => onError && onError("autoplay bloqueado"));
+            });
+          }
         }}
         onEnded={onEnded}
-        onError={onError}
+        onError={() => {
+          const code = localRef.current?.error?.code;
+          if (onError) onError("MediaError code " + (code ?? "desconhecido"));
+        }}
         onWaiting={onWaiting}
         onStalled={onWaiting}
         onPlaying={onResume}
@@ -898,8 +925,16 @@ function MediaLayer({
       />
     );
   }
-  return <img src={layer.src} alt={layer.item.title} onError={onError} style={base} />;
+  return (
+    <img
+      src={layer.src}
+      alt={layer.item.title}
+      onError={() => onError && onError("falha ao carregar imagem")}
+      style={base}
+    />
+  );
 }
+
 
 
 function SponsorRail({
