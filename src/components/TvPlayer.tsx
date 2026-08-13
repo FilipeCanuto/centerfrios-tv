@@ -863,6 +863,7 @@ function MediaLayer({
   fade,
   videoRef,
   onEnded,
+  onMetadata,
   onError,
   onWaiting,
   onResume,
