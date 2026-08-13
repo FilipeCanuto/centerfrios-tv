@@ -418,8 +418,9 @@ export function TvPlayer() {
     return () => clearInterval(check);
   }, []);
 
-  const current = items.length ? items[index % items.length] : null;
-  const nextItem = items.length > 1 ? items[(index + 1) % items.length] : null;
+  const safeIndex = items.length > 0 ? index % items.length : 0;
+  const current = items.length ? items[safeIndex] || null : null;
+  const nextItem = items.length > 1 ? items[(safeIndex + 1) % items.length] || null : null;
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
   currentRef.current = current;
 
@@ -500,18 +501,42 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
 
-  // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
+  // ---------- temporizador: imagens por duração; vídeos com watchdog de segurança ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
-    if (current.type === "video") return;
 
-    timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
+    if (current.type === "video") {
+      // fallback genérico até os metadados chegarem (35s)
+      timerRef.current = setTimeout(() => {
+        console.warn("[player] watchdog genérico disparado, avançando mídia");
+        advance();
+      }, 35000);
+    } else {
+      timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
+    }
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
+
+  // watchdog dinâmico: duração real do vídeo + 5s
+  const handleVideoMetadata = useCallback(
+    (durationSeconds: number) => {
+      if (!durationSeconds || !isFinite(durationSeconds) || durationSeconds <= 0) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(
+        () => {
+          console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
+          advance();
+        },
+        (durationSeconds + 5) * 1000
+      );
+    },
+    [advance]
+  );
 
   // reinicia spinner a cada mídia
   useEffect(() => {
@@ -529,7 +554,7 @@ export function TvPlayer() {
         info || ""
       );
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 3000);
+      errorTimerRef.current = setTimeout(advance, 1000);
     },
     [advance]
   );
@@ -694,9 +719,11 @@ export function TvPlayer() {
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
-            {tv && tv.playlist_id
-              ? "Playlist vinculada não possui mídias cadastradas"
-              : "Nenhum conteúdo vinculado a esta TV"}
+            {status !== "empty" && items.length > 0
+              ? "Sincronizando player…"
+              : tv && tv.playlist_id
+                ? "Playlist vinculada não possui mídias cadastradas"
+                : "Nenhum conteúdo vinculado a esta TV"}
           </p>
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
@@ -731,6 +758,7 @@ export function TvPlayer() {
             fade
             videoRef={videoRef}
             onEnded={advance}
+            onMetadata={handleVideoMetadata}
             onError={handleMediaError}
             onWaiting={() => setBuffering(true)}
             onResume={() => setBuffering(false)}
@@ -837,6 +865,7 @@ function MediaLayer({
   fade,
   videoRef,
   onEnded,
+  onMetadata,
   onError,
   onWaiting,
   onResume,
@@ -848,6 +877,7 @@ function MediaLayer({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
+  onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
@@ -888,9 +918,12 @@ function MediaLayer({
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
 
+  const mediaKey = layer.item.media_id || layer.src;
+
   if (layer.item.type === "video") {
     return (
       <video
+        key={mediaKey}
         ref={(el) => {
           localRef.current = el;
           if (videoRef) videoRef.current = el;
@@ -900,10 +933,11 @@ function MediaLayer({
         muted={muted}
         playsInline
         disablePictureInPicture
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(e) => {
           const el = e.currentTarget;
           el.volume = Math.min(1, Math.max(0, volume / 100));
+          if (onMetadata) onMetadata(el.duration);
           const play = el.play();
           if (play && typeof play.catch === "function") {
             play.catch(() => {
@@ -927,6 +961,7 @@ function MediaLayer({
   }
   return (
     <img
+      key={mediaKey}
       src={layer.src}
       alt={layer.item.title}
       onError={() => onError && onError("falha ao carregar imagem")}
