@@ -46,6 +46,8 @@ export function TvPlayer() {
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
+
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
