@@ -609,15 +609,27 @@ export function TvPlayer() {
       <Stage portrait={false}>
         <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
-          <p style={{ fontSize: "30px", marginTop: "48px", color: BRAND.yellow }}>
+          <div
+            style={{
+              width: "64px",
+              height: "64px",
+              margin: "40px auto 0",
+              borderRadius: "9999px",
+              border: "6px solid rgba(255,255,255,0.18)",
+              borderTopColor: BRAND.yellow,
+              animation: "cf-spin 1s linear infinite",
+            }}
+          />
+          <p style={{ fontSize: "30px", marginTop: "32px", color: BRAND.yellow }}>
             {offline
               ? "Aguardando resposta da nuvem… Revalidando em 3s"
-              : "Conectando ao servidor e gerando código…"}
+              : "Sincronizando player…"}
           </p>
           <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
             {BRAND.slogan}
           </p>
         </div>
+
       </Stage>
     );
   }
