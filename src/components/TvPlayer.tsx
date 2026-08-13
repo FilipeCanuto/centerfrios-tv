@@ -47,6 +47,7 @@ export function TvPlayer() {
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
+  const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
 
 
   const tvIdRef = useRef<string | null>(null);
