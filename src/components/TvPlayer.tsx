@@ -573,10 +573,12 @@ export function TvPlayer() {
   // reinicia spinner a cada mídia
   useEffect(() => {
     setBuffering(false);
+    setMediaFailed(false);
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, [index]);
+
 
   const handleMediaError = useCallback(
     (info?: string) => {
