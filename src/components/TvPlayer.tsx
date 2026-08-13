@@ -1002,7 +1002,7 @@ function MediaLayer({
     const el = localRef.current;
     if (!el || layer.item.type !== "video") return;
 
-    if (!audioContextRef?.current && typeof AudioContext !== "undefined") {
+    if (audioContextRef && !audioContextRef.current && typeof AudioContext !== "undefined") {
       try {
         audioContextRef.current = new AudioContext();
       } catch {
