@@ -418,8 +418,9 @@ export function TvPlayer() {
     return () => clearInterval(check);
   }, []);
 
-  const current = items.length ? items[index % items.length] : null;
-  const nextItem = items.length > 1 ? items[(index + 1) % items.length] : null;
+  const safeIndex = items.length > 0 ? index % items.length : 0;
+  const current = items.length ? items[safeIndex] || null : null;
+  const nextItem = items.length > 1 ? items[(safeIndex + 1) % items.length] || null : null;
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
   currentRef.current = current;
 
