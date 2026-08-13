@@ -1,7 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@tanstack/react-router";
-import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { PlayerErrorBoundary } from "@/components/PlayerErrorBoundary";
 import { TvPlayer } from "@/components/TvPlayer";
+
+const PLAYER_GLOBAL_CSS = `
+html, body, #root {
+  background-color: #0b1329 !important;
+  color: #ffffff !important;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  overflow: hidden;
+}
+`;
 
 export const Route = createFileRoute("/player")({
   head: () => ({
@@ -23,10 +34,22 @@ export const Route = createFileRoute("/player")({
 
 function PlayerRoute() {
   return (
-    <AppErrorBoundary variant="tv">
-      <ClientOnly fallback={<div style={{ minHeight: "100vh", backgroundColor: "#000000" }} />}>
-        <TvPlayer />
-      </ClientOnly>
-    </AppErrorBoundary>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: PLAYER_GLOBAL_CSS }} />
+      <PlayerErrorBoundary>
+        <ClientOnly
+          fallback={
+            <div
+              style={{
+                minHeight: "100vh",
+                backgroundColor: "#0b1329",
+              }}
+            />
+          }
+        >
+          <TvPlayer />
+        </ClientOnly>
+      </PlayerErrorBoundary>
+    </>
   );
 }
