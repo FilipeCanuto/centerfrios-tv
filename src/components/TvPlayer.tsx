@@ -916,9 +916,12 @@ function MediaLayer({
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
 
+  const mediaKey = layer.item.media_id || layer.src;
+
   if (layer.item.type === "video") {
     return (
       <video
+        key={mediaKey}
         ref={(el) => {
           localRef.current = el;
           if (videoRef) videoRef.current = el;
@@ -928,10 +931,11 @@ function MediaLayer({
         muted={muted}
         playsInline
         disablePictureInPicture
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(e) => {
           const el = e.currentTarget;
           el.volume = Math.min(1, Math.max(0, volume / 100));
+          if (onMetadata) onMetadata(el.duration);
           const play = el.play();
           if (play && typeof play.catch === "function") {
             play.catch(() => {
@@ -955,6 +959,7 @@ function MediaLayer({
   }
   return (
     <img
+      key={mediaKey}
       src={layer.src}
       alt={layer.item.title}
       onError={() => onError && onError("falha ao carregar imagem")}
