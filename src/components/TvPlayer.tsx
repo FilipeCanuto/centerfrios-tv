@@ -55,6 +55,7 @@ export function TvPlayer() {
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
 
@@ -820,9 +821,11 @@ export function TvPlayer() {
             objectFit={objectFit}
             fade
             videoRef={videoRef}
+            audioContextRef={audioContextRef}
             onEnded={advance}
             onMetadata={handleVideoMetadata}
             onError={handleMediaError}
+            onFatal={advance}
             onWaiting={() => setBuffering(true)}
             onResume={() => setBuffering(false)}
           />
@@ -963,9 +966,11 @@ function MediaLayer({
   objectFit,
   fade,
   videoRef,
+  audioContextRef,
   onEnded,
   onMetadata,
   onError,
+  onFatal,
   onWaiting,
   onResume,
 }: {
@@ -975,9 +980,11 @@ function MediaLayer({
   objectFit: "cover" | "contain";
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
+  audioContextRef?: React.MutableRefObject<AudioContext | null>;
   onEnded?: () => void;
   onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
+  onFatal?: () => void;
   onWaiting?: () => void;
   onResume?: () => void;
 }) {
@@ -990,18 +997,33 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
-  // play explícito (Fire OS bloqueia autoplay com som)
+  // play explícito com bypass de autoplay nativo (Fire OS / Chromium)
   useEffect(() => {
     const el = localRef.current;
     if (!el || layer.item.type !== "video") return;
+
+    if (audioContextRef && !audioContextRef.current && typeof AudioContext !== "undefined") {
+      try {
+        audioContextRef.current = new AudioContext();
+      } catch {
+        /* audio API indisponível */
+      }
+    }
+    if (audioContextRef?.current && audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
+
     el.muted = muted;
     const playPromise = el.play();
-    if (playPromise && typeof playPromise.catch === "function") {
+    if (playPromise !== undefined) {
       playPromise.catch((error) => {
-        console.warn("Autoplay bloqueado pelo Android, tentando com som mudo:", error);
+        console.warn("Autoplay com som bloqueado. Tentando modo mudo forçado:", error);
         if (localRef.current) {
           localRef.current.muted = true;
-          localRef.current.play().catch(() => undefined);
+          localRef.current.play().catch((e) => {
+            console.error("Falha fatal de reprodução:", e);
+            setTimeout(() => onFatal?.(), 2000);
+          });
         }
       });
     }
@@ -1057,14 +1079,19 @@ function MediaLayer({
           ref={(el) => {
             localRef.current = el;
             if (videoRef) videoRef.current = el;
+            // fallback: defaultMuted não é atributo React padrão, então garantimos a propriedade DOM
+            if (el) el.defaultMuted = true;
           }}
           src={layer.src}
           autoPlay
           playsInline
+          // @ts-expect-error defaultMuted força muted no DOM inicial para bypass do autoplay no Fire OS
+          defaultMuted={true}
           muted={muted}
           preload="auto"
           controls={false}
           disablePictureInPicture
+          className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
           onLoadedMetadata={(e) => {
             const el = e.currentTarget;
             el.volume = Math.min(1, Math.max(0, volume / 100));
