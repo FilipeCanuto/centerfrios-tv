@@ -836,17 +836,33 @@ export function TvPlayer() {
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: "#000000",
-              color: BRAND.yellow,
-              fontSize: "30px",
-              fontWeight: 700,
-              textAlign: "center",
+              zIndex: 50,
               padding: "24px",
             }}
           >
-            Mídia indisponível — Carregando próxima em 2s...
+            <div className="text-red-500 z-50 text-2xl font-bold bg-black p-4">
+              Erro de Reprodução. Código: {mediaErrorCode || "desconhecido"}
+            </div>
           </div>
         ) : null}
-        {buffering && !mediaFailed ? <BufferSpinner /> : null}
+        {buffering && !mediaFailed ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#000000",
+              color: "#FFFFFF",
+              fontSize: "28px",
+              fontWeight: 700,
+              zIndex: 40,
+            }}
+          >
+            Carregando mídia...
+          </div>
+        ) : null}
 
         <div
           style={{
