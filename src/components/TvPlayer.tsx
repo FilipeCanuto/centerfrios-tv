@@ -242,7 +242,6 @@ export function TvPlayer() {
       setOffline(false);
       setTv(row);
 
-      setTv(row);
       if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         setStatus("pairing");
         return;
