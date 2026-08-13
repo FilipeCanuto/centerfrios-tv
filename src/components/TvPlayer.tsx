@@ -590,8 +590,9 @@ export function TvPlayer() {
         info || ""
       );
       setMediaFailed(true);
+      setMediaErrorCode(info || "desconhecido");
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 2000);
+      errorTimerRef.current = setTimeout(advance, 3000);
     },
     [advance]
   );
