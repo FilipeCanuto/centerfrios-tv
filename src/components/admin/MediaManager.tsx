@@ -264,6 +264,10 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
             <p className="text-xs text-muted-foreground">
               Selecione vários arquivos de uma vez — imagens e vídeos MP4 até 4K.
             </p>
+            <p className="text-[11px] font-semibold text-muted-foreground">
+              Recomendamos .MP4 H.264 para reprodução fluida 4K
+            </p>
+
           </div>
         </div>
 
@@ -285,7 +289,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
               id="file"
               type="file"
               multiple
-              accept="image/*,video/mp4,video/*"
+              accept="video/mp4,image/*,video/quicktime,video/*"
               className="hidden"
               onChange={(e) => addFiles(e.target.files)}
             />

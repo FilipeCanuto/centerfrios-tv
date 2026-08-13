@@ -28,7 +28,7 @@ type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 const MANIFEST_KEY = "playlist";
 const HEARTBEAT_MS = 8000;
 const METADATA_GUARD_MS = 20000;
-const FADE_MS = 700;
+const FADE_MS = 200;
 
 export function TvPlayer() {
   const [status, setStatus] = useState<Status>("boot");
@@ -39,22 +39,22 @@ export function TvPlayer() {
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [front, setFront] = useState<Layer | null>(null);
-  const [back, setBack] = useState<Layer | null>(null);
+  const [covered, setCovered] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
-  const [videoNonce, setVideoNonce] = useState(0);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
-  const retriesRef = useRef(0);
   const currentRef = useRef<ResolvedItem | null>(null);
+
 
 
   tvRef.current = tv;
@@ -458,39 +458,47 @@ export function TvPlayer() {
     tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
   const countdownOn = countdownMs > 0;
 
-  // ---------- crossfade + resolução de fonte (cache) ----------
+  // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
   useEffect(() => {
     if (!current || liveOn) return;
     let cancelled = false;
     const key = current.media_id + "-" + index;
 
-    resolveMediaUrl(current.url).then(({ src, revoke }) => {
-      if (cancelled) {
-        if (revoke) URL.revokeObjectURL(src);
-        return;
+    // 1) cobre a tela, 2) libera o decoder do vídeo anterior, 3) monta a nova mídia
+    setCovered(true);
+    const el = videoRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        /* ignore */
       }
-      setFront((prev) => {
-        setBack(prev);
-        return { key, item: current, src, revoke };
-      });
+      videoRef.current = null;
+    }
+    setFront((prev) => {
+      if (prev && prev.revoke) URL.revokeObjectURL(prev.src);
+      return null;
     });
+
+    const t = setTimeout(() => {
+      resolveMediaUrl(current.url).then(({ src, revoke }) => {
+        if (cancelled) {
+          if (revoke) URL.revokeObjectURL(src);
+          return;
+        }
+        setFront({ key, item: current, src, revoke });
+        setCovered(false);
+      });
+    }, FADE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
-
-  useEffect(() => {
-    if (!back) return;
-    const t = setTimeout(() => {
-      setBack((b) => {
-        if (b && b.revoke) URL.revokeObjectURL(b.src);
-        return null;
-      });
-    }, FADE_MS + 100);
-    return () => clearTimeout(t);
-  }, [back?.key]);
 
   // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
   useEffect(() => {
@@ -505,21 +513,27 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  // reinicia tentativas/spinner a cada mídia
+  // reinicia spinner a cada mídia
   useEffect(() => {
-    retriesRef.current = 0;
-    setVideoNonce(0);
     setBuffering(false);
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
   }, [index]);
 
-  const handleMediaError = useCallback(() => {
-    if (currentRef.current?.type === "video" && retriesRef.current < 2) {
-      retriesRef.current += 1;
-      setVideoNonce((n) => n + 1);
-      return;
-    }
-    advance();
-  }, [advance]);
+  const handleMediaError = useCallback(
+    (info?: string) => {
+      console.warn(
+        "[player] falha ao decodificar mídia:",
+        currentRef.current?.title || "",
+        info || ""
+      );
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(advance, 3000);
+    },
+    [advance]
+  );
+
 
 
   const overlays = (
@@ -707,10 +721,9 @@ export function TvPlayer() {
   return (
     <Stage portrait={portrait}>
       <div style={mainZone}>
-        {back ? <MediaLayer layer={back} muted objectFit={objectFit} volume={0} /> : null}
         {front ? (
           <MediaLayer
-            key={front.key + "-" + videoNonce}
+            key={front.key}
             layer={front}
             muted={tv?.muted !== false}
             volume={volume}
@@ -724,9 +737,20 @@ export function TvPlayer() {
           />
         ) : null}
         {buffering ? <BufferSpinner /> : null}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: "#04122b",
+            opacity: covered || !front ? 1 : 0,
+            transition: "opacity " + FADE_MS + "ms ease",
+            pointerEvents: "none",
+          }}
+        />
       </div>
 
       <Preloader item={nextItem} />
+
 
 
       {multizone ? (
@@ -824,7 +848,7 @@ function MediaLayer({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
-  onError?: () => void;
+  onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
 }) {
@@ -837,6 +861,21 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
+  // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
+  useEffect(() => {
+    return () => {
+      const el = localRef.current;
+      if (!el) return;
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
   const base: React.CSSProperties = {
     position: "absolute",
     inset: 0,
@@ -846,7 +885,7 @@ function MediaLayer({
     transform: "translate3d(0, 0, 0)",
     backfaceVisibility: "hidden",
     willChange: "transform",
-    animation: fade ? "cf-fade-in 0.7s ease-out" : undefined,
+    animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
 
   if (layer.item.type === "video") {
@@ -860,12 +899,24 @@ function MediaLayer({
         autoPlay
         muted={muted}
         playsInline
-        preload="auto"
+        disablePictureInPicture
+        preload="metadata"
         onLoadedMetadata={(e) => {
-          e.currentTarget.volume = Math.min(1, Math.max(0, volume / 100));
+          const el = e.currentTarget;
+          el.volume = Math.min(1, Math.max(0, volume / 100));
+          const play = el.play();
+          if (play && typeof play.catch === "function") {
+            play.catch(() => {
+              el.muted = true;
+              el.play().catch(() => onError && onError("autoplay bloqueado"));
+            });
+          }
         }}
         onEnded={onEnded}
-        onError={onError}
+        onError={() => {
+          const code = localRef.current?.error?.code;
+          if (onError) onError("MediaError code " + (code ?? "desconhecido"));
+        }}
         onWaiting={onWaiting}
         onStalled={onWaiting}
         onPlaying={onResume}
@@ -874,8 +925,16 @@ function MediaLayer({
       />
     );
   }
-  return <img src={layer.src} alt={layer.item.title} onError={onError} style={base} />;
+  return (
+    <img
+      src={layer.src}
+      alt={layer.item.title}
+      onError={() => onError && onError("falha ao carregar imagem")}
+      style={base}
+    />
+  );
 }
+
 
 
 function SponsorRail({
@@ -1071,21 +1130,10 @@ function BufferSpinner() {
   );
 }
 
-/** Pré-carrega a próxima mídia da playlist fora da tela. */
+/** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  if (!item) return null;
-  if (item.type === "video") {
-    return (
-      <video
-        key={item.media_id}
-        src={item.url}
-        preload="auto"
-        muted
-        playsInline
-        style={{ display: "none" }}
-      />
-    );
-  }
+  if (!item || item.type === "video") return null;
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
+
 
