@@ -289,7 +289,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
               id="file"
               type="file"
               multiple
-              accept="image/*,video/mp4,video/*"
+              accept="video/mp4,image/*,video/quicktime,video/*"
               className="hidden"
               onChange={(e) => addFiles(e.target.files)}
             />
