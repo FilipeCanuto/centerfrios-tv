@@ -1079,10 +1079,13 @@ function MediaLayer({
           ref={(el) => {
             localRef.current = el;
             if (videoRef) videoRef.current = el;
+            // fallback: defaultMuted não é atributo React padrão, então garantimos a propriedade DOM
+            if (el) el.defaultMuted = true;
           }}
           src={layer.src}
           autoPlay
           playsInline
+          // @ts-expect-error defaultMuted força muted no DOM inicial para bypass do autoplay no Fire OS
           defaultMuted={true}
           muted={muted}
           preload="auto"
