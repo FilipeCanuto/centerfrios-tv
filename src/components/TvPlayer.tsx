@@ -1029,9 +1029,11 @@ function MediaLayer({
         src={layer.src}
         autoPlay
         muted={muted}
+        controls={false}
         playsInline
         disablePictureInPicture
         preload="auto"
+
         onLoadedMetadata={(e) => {
           const el = e.currentTarget;
           el.volume = Math.min(1, Math.max(0, volume / 100));
