@@ -875,6 +875,7 @@ function MediaLayer({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
+  onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
