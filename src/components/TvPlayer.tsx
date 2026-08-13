@@ -458,39 +458,47 @@ export function TvPlayer() {
     tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
   const countdownOn = countdownMs > 0;
 
-  // ---------- crossfade + resolução de fonte (cache) ----------
+  // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
   useEffect(() => {
     if (!current || liveOn) return;
     let cancelled = false;
     const key = current.media_id + "-" + index;
 
-    resolveMediaUrl(current.url).then(({ src, revoke }) => {
-      if (cancelled) {
-        if (revoke) URL.revokeObjectURL(src);
-        return;
+    // 1) cobre a tela, 2) libera o decoder do vídeo anterior, 3) monta a nova mídia
+    setCovered(true);
+    const el = videoRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        /* ignore */
       }
-      setFront((prev) => {
-        setBack(prev);
-        return { key, item: current, src, revoke };
-      });
+      videoRef.current = null;
+    }
+    setFront((prev) => {
+      if (prev && prev.revoke) URL.revokeObjectURL(prev.src);
+      return null;
     });
+
+    const t = setTimeout(() => {
+      resolveMediaUrl(current.url).then(({ src, revoke }) => {
+        if (cancelled) {
+          if (revoke) URL.revokeObjectURL(src);
+          return;
+        }
+        setFront({ key, item: current, src, revoke });
+        setCovered(false);
+      });
+    }, FADE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
-
-  useEffect(() => {
-    if (!back) return;
-    const t = setTimeout(() => {
-      setBack((b) => {
-        if (b && b.revoke) URL.revokeObjectURL(b.src);
-        return null;
-      });
-    }, FADE_MS + 100);
-    return () => clearTimeout(t);
-  }, [back?.key]);
 
   // ---------- temporizador: apenas imagens; vídeos avançam no onEnded ----------
   useEffect(() => {
@@ -505,21 +513,27 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  // reinicia tentativas/spinner a cada mídia
+  // reinicia spinner a cada mídia
   useEffect(() => {
-    retriesRef.current = 0;
-    setVideoNonce(0);
     setBuffering(false);
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
   }, [index]);
 
-  const handleMediaError = useCallback(() => {
-    if (currentRef.current?.type === "video" && retriesRef.current < 2) {
-      retriesRef.current += 1;
-      setVideoNonce((n) => n + 1);
-      return;
-    }
-    advance();
-  }, [advance]);
+  const handleMediaError = useCallback(
+    (info?: string) => {
+      console.warn(
+        "[player] falha ao decodificar mídia:",
+        currentRef.current?.title || "",
+        info || ""
+      );
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(advance, 3000);
+    },
+    [advance]
+  );
+
 
 
   const overlays = (
