@@ -47,6 +47,7 @@ export function TvPlayer() {
   const [now, setNow] = useState(() => Date.now());
   const [buffering, setBuffering] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
+  const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
 
 
   const tvIdRef = useRef<string | null>(null);
@@ -576,6 +577,7 @@ export function TvPlayer() {
   useEffect(() => {
     setBuffering(false);
     setMediaFailed(false);
+    setMediaErrorCode("");
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
@@ -590,8 +592,9 @@ export function TvPlayer() {
         info || ""
       );
       setMediaFailed(true);
+      setMediaErrorCode(info || "desconhecido");
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 2000);
+      errorTimerRef.current = setTimeout(advance, 3000);
     },
     [advance]
   );
@@ -833,17 +836,33 @@ export function TvPlayer() {
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: "#000000",
-              color: BRAND.yellow,
-              fontSize: "30px",
-              fontWeight: 700,
-              textAlign: "center",
+              zIndex: 50,
               padding: "24px",
             }}
           >
-            Mídia indisponível — Carregando próxima em 2s...
+            <div className="text-red-500 z-50 text-2xl font-bold bg-black p-4">
+              Erro de Reprodução. Código: {mediaErrorCode || "desconhecido"}
+            </div>
           </div>
         ) : null}
-        {buffering && !mediaFailed ? <BufferSpinner /> : null}
+        {buffering && !mediaFailed ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#000000",
+              color: "#FFFFFF",
+              fontSize: "28px",
+              fontWeight: 700,
+              zIndex: 40,
+            }}
+          >
+            Carregando mídia...
+          </div>
+        ) : null}
 
         <div
           style={{
@@ -1004,69 +1023,84 @@ function MediaLayer({
     };
   }, []);
 
+  const container: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+  };
+
   const base: React.CSSProperties = {
     width: "100%",
     height: "100%",
     objectFit,
+    position: "absolute",
+    top: 0,
+    left: 0,
     backgroundColor: "#000000",
     transform: "translate3d(0, 0, 0)",
     backfaceVisibility: "hidden",
-    willChange: "transform",
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
-
 
   const mediaKey = layer.item.media_id || layer.src;
 
   if (layer.item.type === "video") {
     return (
-      <video
-        key={mediaKey}
-        ref={(el) => {
-          localRef.current = el;
-          if (videoRef) videoRef.current = el;
-        }}
-        src={layer.src}
-        autoPlay
-        muted={muted}
-        controls={false}
-        playsInline
-        disablePictureInPicture
-        preload="auto"
-
-        onLoadedMetadata={(e) => {
-          const el = e.currentTarget;
-          el.volume = Math.min(1, Math.max(0, volume / 100));
-          if (onMetadata) onMetadata(el.duration);
-          const play = el.play();
-          if (play && typeof play.catch === "function") {
-            play.catch(() => {
-              el.muted = true;
-              el.play().catch(() => onError && onError("autoplay bloqueado"));
-            });
-          }
-        }}
-        onEnded={onEnded}
-        onError={() => {
-          const code = localRef.current?.error?.code;
-          if (onError) onError("MediaError code " + (code ?? "desconhecido"));
-        }}
-        onWaiting={onWaiting}
-        onStalled={onWaiting}
-        onPlaying={onResume}
-        onCanPlay={onResume}
-        style={base}
-      />
+      <div style={container}>
+        <video
+          key={mediaKey}
+          ref={(el) => {
+            localRef.current = el;
+            if (videoRef) videoRef.current = el;
+          }}
+          src={layer.src}
+          autoPlay
+          playsInline
+          muted={muted}
+          preload="auto"
+          controls={false}
+          disablePictureInPicture
+          onLoadedMetadata={(e) => {
+            const el = e.currentTarget;
+            el.volume = Math.min(1, Math.max(0, volume / 100));
+            if (onMetadata) onMetadata(el.duration);
+            const play = el.play();
+            if (play && typeof play.catch === "function") {
+              play.catch(() => {
+                el.muted = true;
+                el.play().catch(() => onError && onError("autoplay bloqueado"));
+              });
+            }
+          }}
+          onEnded={onEnded}
+          onError={(e) => {
+            const code = e.currentTarget.error?.code ?? localRef.current?.error?.code;
+            if (onError) onError(String(code ?? "desconhecido"));
+          }}
+          onWaiting={onWaiting}
+          onStalled={onWaiting}
+          onPlaying={onResume}
+          onCanPlay={onResume}
+          style={base}
+        />
+      </div>
     );
   }
   return (
-    <img
-      key={mediaKey}
-      src={layer.src}
-      alt={layer.item.title}
-      onError={() => onError && onError("falha ao carregar imagem")}
-      style={base}
-    />
+    <div style={container}>
+      <img
+        key={mediaKey}
+        src={layer.src}
+        alt={layer.item.title}
+        onError={() => onError && onError("IMG_LOAD")}
+        style={base}
+      />
+    </div>
   );
 }
 
