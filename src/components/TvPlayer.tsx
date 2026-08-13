@@ -971,6 +971,24 @@ function MediaLayer({
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
 
+  // play explícito (Fire OS bloqueia autoplay com som)
+  useEffect(() => {
+    const el = localRef.current;
+    if (!el || layer.item.type !== "video") return;
+    el.muted = muted;
+    const playPromise = el.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch((error) => {
+        console.warn("Autoplay bloqueado pelo Android, tentando com som mudo:", error);
+        if (localRef.current) {
+          localRef.current.muted = true;
+          localRef.current.play().catch(() => undefined);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layer.src, muted]);
+
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
     return () => {
@@ -987,16 +1005,16 @@ function MediaLayer({
   }, []);
 
   const base: React.CSSProperties = {
-    position: "absolute",
-    inset: 0,
     width: "100%",
     height: "100%",
     objectFit,
+    backgroundColor: "#000000",
     transform: "translate3d(0, 0, 0)",
     backfaceVisibility: "hidden",
     willChange: "transform",
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
+
 
   const mediaKey = layer.item.media_id || layer.src;
 
