@@ -783,6 +783,15 @@ export function TvPlayer() {
   }
 
   const tickerVisible = multizone && tickerPosition !== "hidden";
+  const mediaBox: React.CSSProperties = {
+    backgroundColor: "#000000",
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  };
   const mainZone: React.CSSProperties = tickerVisible
     ? {
         position: "absolute",
@@ -790,8 +799,9 @@ export function TvPlayer() {
         right: 0,
         top: tickerPosition === "top" ? "90px" : 0,
         bottom: tickerPosition === "top" ? 0 : "90px",
+        ...mediaBox,
       }
-    : { position: "absolute", inset: 0 };
+    : { position: "absolute", inset: 0, ...mediaBox };
 
   const corner = cornerStyle(qrPosition);
 
@@ -814,7 +824,27 @@ export function TvPlayer() {
             onResume={() => setBuffering(false)}
           />
         ) : null}
-        {buffering ? <BufferSpinner /> : null}
+        {mediaFailed ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#000000",
+              color: BRAND.yellow,
+              fontSize: "30px",
+              fontWeight: 700,
+              textAlign: "center",
+              padding: "24px",
+            }}
+          >
+            Mídia indisponível — Carregando próxima em 2s...
+          </div>
+        ) : null}
+        {buffering && !mediaFailed ? <BufferSpinner /> : null}
+
         <div
           style={{
             position: "absolute",
