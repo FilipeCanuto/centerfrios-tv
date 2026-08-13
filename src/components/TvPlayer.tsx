@@ -577,6 +577,7 @@ export function TvPlayer() {
   useEffect(() => {
     setBuffering(false);
     setMediaFailed(false);
+    setMediaErrorCode("");
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
