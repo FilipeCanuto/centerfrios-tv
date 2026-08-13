@@ -55,6 +55,7 @@ export function TvPlayer() {
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
 
