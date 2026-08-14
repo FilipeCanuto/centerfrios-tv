@@ -43,9 +43,10 @@ function PlayerRoute() {
             <div
               style={{
                 minHeight: "100vh",
-                backgroundColor: "#0b1329",
+                backgroundColor: "#000000",
               }}
             />
+
           }
         >
           <TvPlayer />
