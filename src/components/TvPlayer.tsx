@@ -55,7 +55,6 @@ export function TvPlayer() {
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
 
@@ -821,7 +820,6 @@ export function TvPlayer() {
             objectFit={objectFit}
             fade
             videoRef={videoRef}
-            audioContextRef={audioContextRef}
             onEnded={advance}
             onMetadata={handleVideoMetadata}
             onError={handleMediaError}
@@ -966,7 +964,6 @@ function MediaLayer({
   objectFit,
   fade,
   videoRef,
-  audioContextRef,
   onEnded,
   onMetadata,
   onError,
@@ -980,7 +977,6 @@ function MediaLayer({
   objectFit: "cover" | "contain";
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
-  audioContextRef?: React.MutableRefObject<AudioContext | null>;
   onEnded?: () => void;
   onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
