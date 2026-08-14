@@ -4,8 +4,8 @@ import { PlayerErrorBoundary } from "@/components/PlayerErrorBoundary";
 import { TvPlayer } from "@/components/TvPlayer";
 
 const PLAYER_GLOBAL_CSS = `
-html, body, #root {
-  background-color: #0b1329 !important;
+html, body, #root, #app {
+  background-color: #000000 !important;
   color: #ffffff !important;
   margin: 0;
   padding: 0;
@@ -13,6 +13,7 @@ html, body, #root {
   overflow: hidden;
 }
 `;
+
 
 export const Route = createFileRoute("/player")({
   head: () => ({
@@ -42,9 +43,10 @@ function PlayerRoute() {
             <div
               style={{
                 minHeight: "100vh",
-                backgroundColor: "#0b1329",
+                backgroundColor: "#000000",
               }}
             />
+
           }
         >
           <TvPlayer />
