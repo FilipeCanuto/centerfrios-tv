@@ -998,20 +998,11 @@ function MediaLayer({
   }, [layer.src, volume]);
 
   // play explícito com bypass de autoplay nativo (Fire OS / Chromium)
+  // IMPORTANTE: nenhuma Web Audio API aqui — AudioContext/createMediaElementSource
+  // lança InvalidStateError no WebView do Fire TV e derruba o React (tela branca).
   useEffect(() => {
     const el = localRef.current;
     if (!el || layer.item.type !== "video") return;
-
-    if (audioContextRef && !audioContextRef.current && typeof AudioContext !== "undefined") {
-      try {
-        audioContextRef.current = new AudioContext();
-      } catch {
-        /* audio API indisponível */
-      }
-    }
-    if (audioContextRef?.current && audioContextRef.current.state === "suspended") {
-      audioContextRef.current.resume().catch(() => {});
-    }
 
     el.muted = muted;
     const playPromise = el.play();
@@ -1021,7 +1012,7 @@ function MediaLayer({
         if (localRef.current) {
           localRef.current.muted = true;
           localRef.current.play().catch((e) => {
-            console.error("Falha fatal de reprodução:", e);
+            console.warn("Falha de reprodução, avançando mídia:", e);
             setTimeout(() => onFatal?.(), 2000);
           });
         }
@@ -1029,6 +1020,7 @@ function MediaLayer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layer.src, muted]);
+
 
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
