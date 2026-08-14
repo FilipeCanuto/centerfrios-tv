@@ -1112,12 +1112,17 @@ function MediaLayer({
         key={mediaKey}
         src={layer.src}
         alt={layer.item.title}
-        onError={() => onError && onError("IMG_LOAD")}
+        className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
+        onError={() => {
+          console.warn("Falha ao carregar imagem:", layer.src);
+          if (onError) onError("IMG_LOAD");
+        }}
         style={base}
       />
     </div>
   );
 }
+
 
 
 
