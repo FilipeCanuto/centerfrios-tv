@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LOGO_URL, BRAND, isOnline, type TvRow } from "@/lib/centerfrios";
@@ -23,6 +23,16 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
+  beforeLoad: async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData.user?.id;
+    if (!uid) throw redirect({ to: "/auth" });
+    const { data: isAdmin } = await supabase.rpc("has_role", {
+      _user_id: uid,
+      _role: "admin",
+    });
+    if (!isAdmin) throw redirect({ to: "/" });
+  },
   component: AdminPage,
   head: () => ({
     meta: [
