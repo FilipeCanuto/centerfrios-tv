@@ -13,14 +13,7 @@ import {
   type TvRow,
 } from "@/lib/centerfrios";
 
-import {
-  loadManifest,
-  precacheMedia,
-  pruneCache,
-  purgeAll,
-  resolveMediaUrl,
-  saveManifest,
-} from "@/lib/player-cache";
+import { loadManifest, precacheMedia, pruneCache, purgeAll, resolveMediaUrl, saveManifest } from "@/lib/player-cache";
 
 type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
@@ -49,7 +42,6 @@ export function TvPlayer() {
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
 
-
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,10 +49,10 @@ export function TvPlayer() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
-
-
+  const itemsRef = useRef<ResolvedItem[]>([]);
 
   tvRef.current = tv;
+  itemsRef.current = items;
 
   const advance = useCallback(() => setIndex((i) => i + 1), []);
 
@@ -189,6 +181,19 @@ export function TvPlayer() {
         return;
       }
 
+      // Corrige o loop de "Carregando mídia...": heartbeat, polling de
+      // revalidação e realtime chamam loadPlaylist() com frequência, mas
+      // isso não significa que o conteúdo mudou. Se a playlist resolvida é
+      // idêntica à que já está tocando, não reinicia nada — mantém o vídeo
+      // atual rodando em vez de reiniciar do zero a cada poucos segundos.
+      const signature = (list: ResolvedItem[]) =>
+        list.map((it) => it.media_id + "|" + it.url + "|" + it.duration).join(",");
+
+      if (signature(resolved) === signature(itemsRef.current)) {
+        setStatus("playing");
+        return;
+      }
+
       setItems(resolved);
       setIndex(0);
       setStatus("playing");
@@ -213,7 +218,6 @@ export function TvPlayer() {
     }
   }, []);
 
-
   const refreshTv = useCallback(
     async (id: string | null) => {
       if (!id) {
@@ -222,11 +226,7 @@ export function TvPlayer() {
       }
       let row: TvRow | null = null;
       try {
-        const { data, error } = await supabase
-          .from("tvs")
-          .select(TV_SELECT_COLUMNS)
-          .eq("id", id)
-          .maybeSingle();
+        const { data, error } = await supabase.from("tvs").select(TV_SELECT_COLUMNS).eq("id", id).maybeSingle();
         if (error || !data) {
           setOffline(true);
           return;
@@ -278,7 +278,6 @@ export function TvPlayer() {
       if (videoRef.current) {
         videoRef.current.muted = cmd.action === "mute";
       }
-
     },
     [refreshTv],
   );
@@ -289,26 +288,22 @@ export function TvPlayer() {
     if (!id) return;
     const channel = supabase
       .channel("tv-" + id)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id },
-        (payload) => {
-          const row = payload.new as unknown as TvRow;
-          const prev = tvRef.current;
-          setTv(row);
-          if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
-          else if (
-            !prev ||
-            row.playlist_id !== prev.playlist_id ||
-            row.event_mode !== prev.event_mode ||
-            row.is_paired !== prev.is_paired
-          ) {
-            loadPlaylist(row.playlist_id, row.event_mode);
-          }
-          if (!row.is_live_active) setLiveFrame(null);
-          runCommand(row.command);
-        },
-      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id }, (payload) => {
+        const row = payload.new as unknown as TvRow;
+        const prev = tvRef.current;
+        setTv(row);
+        if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
+        else if (
+          !prev ||
+          row.playlist_id !== prev.playlist_id ||
+          row.event_mode !== prev.event_mode ||
+          row.is_paired !== prev.is_paired
+        ) {
+          loadPlaylist(row.playlist_id, row.event_mode);
+        }
+        if (!row.is_live_active) setLiveFrame(null);
+        runCommand(row.command);
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "playlists" }, () => {
         const t = tvRef.current;
         if (t) loadPlaylist(t.playlist_id, t.event_mode);
@@ -329,9 +324,7 @@ export function TvPlayer() {
         const row = p.new as { message?: string; expires_at?: string };
         if (!row || !row.message) return;
         setAlertMsg(row.message);
-        const ms = row.expires_at
-          ? Math.max(5000, new Date(row.expires_at).getTime() - Date.now())
-          : 20000;
+        const ms = row.expires_at ? Math.max(5000, new Date(row.expires_at).getTime() - Date.now()) : 20000;
         setTimeout(() => setAlertMsg(null), Math.min(ms, 120000));
       })
       .subscribe();
@@ -397,9 +390,7 @@ export function TvPlayer() {
       const id = tvIdRef.current;
       if (!id) return;
       const perf = performance as unknown as { memory?: { usedJSHeapSize: number } };
-      const memory = perf.memory
-        ? Math.round(perf.memory.usedJSHeapSize / (1024 * 1024)) + " MB"
-        : undefined;
+      const memory = perf.memory ? Math.round(perf.memory.usedJSHeapSize / (1024 * 1024)) + " MB" : undefined;
 
       supabase
         .rpc("tv_heartbeat", {
@@ -419,11 +410,7 @@ export function TvPlayer() {
     const guard = setInterval(async () => {
       const id = tvIdRef.current;
       if (!id) return;
-      const { data } = await supabase
-        .from("tvs")
-        .select(TV_SELECT_COLUMNS)
-        .eq("id", id)
-        .maybeSingle();
+      const { data } = await supabase.from("tvs").select(TV_SELECT_COLUMNS).eq("id", id).maybeSingle();
       if (!data) return;
       const row = data as unknown as TvRow;
       const prev = tvRef.current;
@@ -459,7 +446,6 @@ export function TvPlayer() {
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
   currentRef.current = current;
 
-
   // ---------- QR code dinâmico ----------
   useEffect(() => {
     const url = currentQrUrl;
@@ -485,13 +471,8 @@ export function TvPlayer() {
     featured.image_url &&
     (!featured.featured_until || new Date(featured.featured_until).getTime() > now)
   );
-  const welcomeOn = !!(
-    tv?.welcome_message &&
-    tv.welcome_until &&
-    new Date(tv.welcome_until).getTime() > now
-  );
-  const countdownMs =
-    tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
+  const welcomeOn = !!(tv?.welcome_message && tv.welcome_until && new Date(tv.welcome_until).getTime() > now);
+  const countdownMs = tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
   const countdownOn = countdownMs > 0;
 
   // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
@@ -567,10 +548,10 @@ export function TvPlayer() {
           console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
           advance();
         },
-        (durationSeconds + 5) * 1000
+        (durationSeconds + 5) * 1000,
       );
     },
-    [advance]
+    [advance],
   );
 
   // reinicia spinner a cada mídia
@@ -583,24 +564,16 @@ export function TvPlayer() {
     };
   }, [index]);
 
-
   const handleMediaError = useCallback(
     (info?: string) => {
-      console.warn(
-        "[player] falha ao decodificar mídia:",
-        currentRef.current?.title || "",
-        info || ""
-      );
+      console.warn("[player] falha ao decodificar mídia:", currentRef.current?.title || "", info || "");
       setMediaFailed(true);
       setMediaErrorCode(info || "desconhecido");
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(advance, 3000);
     },
-    [advance]
+    [advance],
   );
-
-
-
 
   const overlays = (
     <>
@@ -630,15 +603,10 @@ export function TvPlayer() {
             }}
           />
           <p style={{ fontSize: "30px", marginTop: "32px", color: BRAND.yellow }}>
-            {offline
-              ? "Aguardando resposta da nuvem… Revalidando em 3s"
-              : "Sincronizando player…"}
+            {offline ? "Aguardando resposta da nuvem… Revalidando em 3s" : "Sincronizando player…"}
           </p>
-          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
-            {BRAND.slogan}
-          </p>
+          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>{BRAND.slogan}</p>
         </div>
-
       </Stage>
     );
   }
@@ -648,9 +616,7 @@ export function TvPlayer() {
       <Stage portrait={portrait}>
         <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
-          <p style={{ fontSize: "28px", marginTop: "40px", opacity: 0.85 }}>
-            Código de pareamento desta TV
-          </p>
+          <p style={{ fontSize: "28px", marginTop: "40px", opacity: 0.85 }}>Código de pareamento desta TV</p>
           <div
             style={{
               fontSize: "140px",
@@ -663,12 +629,8 @@ export function TvPlayer() {
           >
             {code}
           </div>
-          <p style={{ fontSize: "30px", marginTop: "24px" }}>
-            Acesse o painel no celular para ativar esta TV
-          </p>
-          <p style={{ fontSize: "20px", marginTop: "56px", color: BRAND.yellow, opacity: 0.9 }}>
-            {BRAND.slogan}
-          </p>
+          <p style={{ fontSize: "30px", marginTop: "24px" }}>Acesse o painel no celular para ativar esta TV</p>
+          <p style={{ fontSize: "20px", marginTop: "56px", color: BRAND.yellow, opacity: 0.9 }}>{BRAND.slogan}</p>
           {offline ? (
             <p style={{ fontSize: "16px", marginTop: "16px", opacity: 0.6 }}>
               Sem conexão com o servidor — tentando novamente…
@@ -716,11 +678,7 @@ export function TvPlayer() {
     return (
       <Stage portrait={portrait}>
         {liveFrame ? (
-          <img
-            src={liveFrame}
-            alt="Transmissão ao vivo"
-            style={{ width: "100%", height: "100%", objectFit }}
-          />
+          <img src={liveFrame} alt="Transmissão ao vivo" style={{ width: "100%", height: "100%", objectFit }} />
         ) : (
           <div style={{ textAlign: "center", color: "#FFFFFF" }}>
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "320px", maxWidth: "60%" }} />
@@ -738,7 +696,15 @@ export function TvPlayer() {
   if (spotlightOn && featured) {
     return (
       <Stage portrait={portrait}>
-        <div style={{ position: "absolute", inset: "24px", border: "10px solid " + BRAND.yellow, borderRadius: "22px", overflow: "hidden" }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: "24px",
+            border: "10px solid " + BRAND.yellow,
+            borderRadius: "22px",
+            overflow: "hidden",
+          }}
+        >
           <img
             src={featured.image_url}
             alt="Destaque do mural"
@@ -879,8 +845,6 @@ export function TvPlayer() {
 
       <Preloader item={nextItem} />
 
-
-
       {multizone ? (
         <>
           <div
@@ -896,9 +860,7 @@ export function TvPlayer() {
             }}
           >
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: "48px" }} />
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} />
-            ) : null}
+            {qrDataUrl ? <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} /> : null}
           </div>
 
           {tickerVisible ? (
@@ -1017,7 +979,6 @@ function MediaLayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layer.src, muted]);
 
-
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
     return () => {
@@ -1123,16 +1084,7 @@ function MediaLayer({
   );
 }
 
-
-
-
-function SponsorRail({
-  sponsors,
-  position,
-}: {
-  sponsors: EventSponsor[];
-  position: "top" | "bottom";
-}) {
+function SponsorRail({ sponsors, position }: { sponsors: EventSponsor[]; position: "top" | "bottom" }) {
   const loop = sponsors.concat(sponsors);
   return (
     <div
@@ -1151,12 +1103,7 @@ function SponsorRail({
     >
       <div className="cf-ticker" style={{ display: "flex", alignItems: "center", gap: "48px" }}>
         {loop.map((s, i) => (
-          <img
-            key={s.id + "-" + i}
-            src={s.image_url}
-            alt={s.name}
-            style={{ height: "56px", objectFit: "contain" }}
-          />
+          <img key={s.id + "-" + i} src={s.image_url} alt={s.name} style={{ height: "56px", objectFit: "contain" }} />
         ))}
       </div>
     </div>
@@ -1181,9 +1128,7 @@ function Countdown({ label, ms }: { label: string | null; ms: number }) {
         color: "#FFFFFF",
       }}
     >
-      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>
-        {label || "Começa em"}
-      </p>
+      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>{label || "Começa em"}</p>
       <p style={{ fontSize: "56px", fontWeight: 800, color: BRAND.yellow, lineHeight: 1.1 }}>
         {mm}:{ss}
       </p>
@@ -1324,5 +1269,3 @@ function Preloader({ item }: { item: ResolvedItem | null }) {
   if (!item || item.type === "video") return null;
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
-
-
