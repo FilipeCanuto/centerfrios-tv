@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -14,6 +14,29 @@ import {
 } from "@/lib/centerfrios";
 
 import { loadManifest, precacheMedia, pruneCache, purgeAll, resolveMediaUrl, saveManifest } from "@/lib/player-cache";
+
+const HEARTBEAT_FIELDS: Record<string, boolean> = {
+  last_ping: true,
+  updated_at: true,
+  memory_usage: true,
+  screen_resolution: true,
+};
+
+/** true quando a atualização só carrega ping/heartbeat (nada visual mudou). */
+function isHeartbeatOnly(prev: TvRow, next: TvRow): boolean {
+  const keys = Object.keys(next) as (keyof TvRow)[];
+  for (const k of keys) {
+    if (HEARTBEAT_FIELDS[k as string]) continue;
+    const a = prev[k];
+    const b = next[k];
+    if (typeof a === "object" || typeof b === "object") {
+      if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) return false;
+      continue;
+    }
+    if (a !== b) return false;
+  }
+  return true;
+}
 
 type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
@@ -54,7 +77,26 @@ export function TvPlayer() {
   tvRef.current = tv;
   itemsRef.current = items;
 
-  const advance = useCallback(() => setIndex((i) => i + 1), []);
+  // debounce de 150ms: dá tempo ao MediaCodec do Fire OS liberar o buffer antes da próxima URL
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advance = useCallback(() => {
+    if (advanceTimerRef.current) return;
+    try {
+      videoRef.current?.pause();
+    } catch {
+      /* ignore */
+    }
+    advanceTimerRef.current = setTimeout(() => {
+      advanceTimerRef.current = null;
+      setIndex((i) => i + 1);
+    }, 150);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+    };
+  }, []);
 
   // relógio compartilhado (cronômetro / destaque / vinheta)
   useEffect(() => {
@@ -291,6 +333,8 @@ export function TvPlayer() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id }, (payload) => {
         const row = payload.new as unknown as TvRow;
         const prev = tvRef.current;
+        // ignora heartbeats: se só last_ping/updated_at mudaram, nada é re-renderizado
+        if (prev && isHeartbeatOnly(prev, row)) return;
         setTv(row);
         if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
         else if (
@@ -897,7 +941,7 @@ function cornerStyle(position: string): React.CSSProperties {
   return { top: "18px", right: "18px" };
 }
 
-function MediaLayer({
+function MediaLayerBase({
   layer,
   muted,
   volume,
@@ -1026,6 +1070,17 @@ function MediaLayer({
     </div>
   );
 }
+
+/** Isolado: só re-renderiza quando a mídia (id/url) muda — ticker, relógio e QR não tocam no <video>. */
+const MediaLayer = memo(MediaLayerBase, (prev, next) => {
+  return (
+    prev.layer.key === next.layer.key &&
+    prev.layer.item.media_id === next.layer.item.media_id &&
+    prev.layer.src === next.layer.src &&
+    prev.objectFit === next.objectFit &&
+    prev.muted === next.muted
+  );
+});
 
 function SponsorRail({ sponsors, position }: { sponsors: EventSponsor[]; position: "top" | "bottom" }) {
   const loop = sponsors.concat(sponsors);
