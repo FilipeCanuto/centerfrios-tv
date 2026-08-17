@@ -1071,6 +1071,17 @@ function MediaLayerBase({
   );
 }
 
+/** Isolado: só re-renderiza quando a mídia (id/url) muda — ticker, relógio e QR não tocam no <video>. */
+const MediaLayer = memo(MediaLayerBase, (prev, next) => {
+  return (
+    prev.layer.key === next.layer.key &&
+    prev.layer.item.media_id === next.layer.item.media_id &&
+    prev.layer.src === next.layer.src &&
+    prev.objectFit === next.objectFit &&
+    prev.muted === next.muted
+  );
+});
+
 function SponsorRail({ sponsors, position }: { sponsors: EventSponsor[]; position: "top" | "bottom" }) {
   const loop = sponsors.concat(sponsors);
   return (
