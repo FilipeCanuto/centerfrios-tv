@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -54,7 +54,26 @@ export function TvPlayer() {
   tvRef.current = tv;
   itemsRef.current = items;
 
-  const advance = useCallback(() => setIndex((i) => i + 1), []);
+  // debounce de 150ms: dá tempo ao MediaCodec do Fire OS liberar o buffer antes da próxima URL
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advance = useCallback(() => {
+    if (advanceTimerRef.current) return;
+    try {
+      videoRef.current?.pause();
+    } catch {
+      /* ignore */
+    }
+    advanceTimerRef.current = setTimeout(() => {
+      advanceTimerRef.current = null;
+      setIndex((i) => i + 1);
+    }, 150);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+    };
+  }, []);
 
   // relógio compartilhado (cronômetro / destaque / vinheta)
   useEffect(() => {
