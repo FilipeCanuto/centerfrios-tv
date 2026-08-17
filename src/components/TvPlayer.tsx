@@ -15,6 +15,29 @@ import {
 
 import { loadManifest, precacheMedia, pruneCache, purgeAll, resolveMediaUrl, saveManifest } from "@/lib/player-cache";
 
+const HEARTBEAT_FIELDS: Record<string, boolean> = {
+  last_ping: true,
+  updated_at: true,
+  memory_usage: true,
+  screen_resolution: true,
+};
+
+/** true quando a atualização só carrega ping/heartbeat (nada visual mudou). */
+function isHeartbeatOnly(prev: TvRow, next: TvRow): boolean {
+  const keys = Object.keys(next) as (keyof TvRow)[];
+  for (const k of keys) {
+    if (HEARTBEAT_FIELDS[k as string]) continue;
+    const a = prev[k];
+    const b = next[k];
+    if (typeof a === "object" || typeof b === "object") {
+      if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) return false;
+      continue;
+    }
+    if (a !== b) return false;
+  }
+  return true;
+}
+
 type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
