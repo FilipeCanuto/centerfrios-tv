@@ -905,9 +905,7 @@ function MediaLayer({
   fade,
   videoRef,
   onEnded,
-  onMetadata,
   onError,
-  onFatal,
   onWaiting,
   onResume,
 }: {
@@ -918,9 +916,7 @@ function MediaLayer({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
-  onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
-  onFatal?: () => void;
   onWaiting?: () => void;
   onResume?: () => void;
 }) {
@@ -932,30 +928,6 @@ function MediaLayer({
     if (!el) return;
     el.volume = Math.min(1, Math.max(0, volume / 100));
   }, [layer.src, volume]);
-
-  // play explícito com bypass de autoplay nativo (Fire OS / Chromium)
-  // IMPORTANTE: nenhuma Web Audio API aqui — AudioContext/createMediaElementSource
-  // lança InvalidStateError no WebView do Fire TV e derruba o React (tela branca).
-  useEffect(() => {
-    const el = localRef.current;
-    if (!el || layer.item.type !== "video") return;
-
-    el.muted = muted;
-    const playPromise = el.play();
-    if (playPromise !== undefined) {
-      playPromise.catch((error) => {
-        console.warn("Autoplay com som bloqueado. Tentando modo mudo forçado:", error);
-        if (localRef.current) {
-          localRef.current.muted = true;
-          localRef.current.play().catch((e) => {
-            console.warn("Falha de reprodução, avançando mídia:", e);
-            setTimeout(() => onFatal?.(), 2000);
-          });
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layer.src, muted]);
 
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
@@ -1022,19 +994,12 @@ function MediaLayer({
           onLoadedMetadata={(e) => {
             const el = e.currentTarget;
             el.volume = Math.min(1, Math.max(0, volume / 100));
-            if (onMetadata) onMetadata(el.duration);
-            const play = el.play();
-            if (play && typeof play.catch === "function") {
-              play.catch(() => {
-                el.muted = true;
-                el.play().catch(() => onError && onError("autoplay bloqueado"));
-              });
-            }
           }}
           onEnded={onEnded}
           onError={(e) => {
-            const code = e.currentTarget.error?.code ?? localRef.current?.error?.code;
-            if (onError) onError(String(code ?? "desconhecido"));
+            const errorCode = e.currentTarget.error ? e.currentTarget.error.code : "Desconhecido";
+            console.warn("[player] erro de vídeo:", errorCode);
+            if (onError) onError(String(errorCode));
           }}
           onWaiting={onWaiting}
           onStalled={onWaiting}
