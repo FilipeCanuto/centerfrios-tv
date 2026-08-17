@@ -941,7 +941,7 @@ function cornerStyle(position: string): React.CSSProperties {
   return { top: "18px", right: "18px" };
 }
 
-function MediaLayer({
+function MediaLayerBase({
   layer,
   muted,
   volume,
