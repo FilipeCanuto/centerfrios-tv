@@ -517,18 +517,13 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
 
-  // ---------- temporizador: imagens por duração; vídeos com watchdog de segurança ----------
+  // temporizador: apenas imagens avançam por duração configurada em banco
+  // vídeos avançam exclusivamente pelo evento nativo onEnded
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
 
-    if (current.type === "video") {
-      // fallback genérico até os metadados chegarem (35s)
-      timerRef.current = setTimeout(() => {
-        console.warn("[player] watchdog genérico disparado, avançando mídia");
-        advance();
-      }, 35000);
-    } else {
+    if (current.type !== "video") {
       timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     }
 
@@ -537,8 +532,6 @@ export function TvPlayer() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
-
-  // vídeos avançam exclusivamente pelo evento nativo onEnded (sem timers paralelos)
 
   // reinicia spinner a cada mídia
   useEffect(() => {
