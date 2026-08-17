@@ -310,6 +310,8 @@ export function TvPlayer() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id }, (payload) => {
         const row = payload.new as unknown as TvRow;
         const prev = tvRef.current;
+        // ignora heartbeats: se só last_ping/updated_at mudaram, nada é re-renderizado
+        if (prev && isHeartbeatOnly(prev, row)) return;
         setTv(row);
         if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
         else if (
