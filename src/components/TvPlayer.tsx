@@ -552,11 +552,12 @@ export function TvPlayer() {
 
   const handleMediaError = useCallback(
     (info?: string) => {
-      console.warn("[player] falha ao decodificar mídia:", currentRef.current?.title || "", info || "");
+      const errorCode = info || "Desconhecido";
+      console.warn("[player] falha ao decodificar mídia:", currentRef.current?.title || "", errorCode);
       setMediaFailed(true);
-      setMediaErrorCode(info || "desconhecido");
+      setMediaErrorCode(String(errorCode));
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 3000);
+      errorTimerRef.current = setTimeout(advance, 2000);
     },
     [advance],
   );
