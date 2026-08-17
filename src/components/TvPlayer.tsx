@@ -767,9 +767,7 @@ export function TvPlayer() {
             fade
             videoRef={videoRef}
             onEnded={advance}
-            onMetadata={handleVideoMetadata}
             onError={handleMediaError}
-            onFatal={advance}
             onWaiting={() => setBuffering(true)}
             onResume={() => setBuffering(false)}
           />
