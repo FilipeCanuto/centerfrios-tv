@@ -538,21 +538,7 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
-  // watchdog dinâmico: duração real do vídeo + 5s
-  const handleVideoMetadata = useCallback(
-    (durationSeconds: number) => {
-      if (!durationSeconds || !isFinite(durationSeconds) || durationSeconds <= 0) return;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(
-        () => {
-          console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
-          advance();
-        },
-        (durationSeconds + 5) * 1000,
-      );
-    },
-    [advance],
-  );
+  // vídeos avançam exclusivamente pelo evento nativo onEnded (sem timers paralelos)
 
   // reinicia spinner a cada mídia
   useEffect(() => {
