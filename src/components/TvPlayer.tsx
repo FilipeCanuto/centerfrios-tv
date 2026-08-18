@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -13,30 +13,14 @@ import {
   type TvRow,
 } from "@/lib/centerfrios";
 
-import { loadManifest, precacheMedia, pruneCache, purgeAll, resolveMediaUrl, saveManifest } from "@/lib/player-cache";
-
-const HEARTBEAT_FIELDS: Record<string, boolean> = {
-  last_ping: true,
-  updated_at: true,
-  memory_usage: true,
-  screen_resolution: true,
-};
-
-/** true quando a atualização só carrega ping/heartbeat (nada visual mudou). */
-function isHeartbeatOnly(prev: TvRow, next: TvRow): boolean {
-  const keys = Object.keys(next) as (keyof TvRow)[];
-  for (const k of keys) {
-    if (HEARTBEAT_FIELDS[k as string]) continue;
-    const a = prev[k];
-    const b = next[k];
-    if (typeof a === "object" || typeof b === "object") {
-      if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) return false;
-      continue;
-    }
-    if (a !== b) return false;
-  }
-  return true;
-}
+import {
+  loadManifest,
+  precacheMedia,
+  pruneCache,
+  purgeAll,
+  resolveMediaUrl,
+  saveManifest,
+} from "@/lib/player-cache";
 
 type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
@@ -65,41 +49,22 @@ export function TvPlayer() {
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
 
+
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
   const itemsRef = useRef<ResolvedItem[]>([]);
 
+
+
   tvRef.current = tv;
   itemsRef.current = items;
 
-  // debounce de 150ms: dá tempo ao MediaCodec do Fire OS liberar o buffer antes da próxima URL
-  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const advance = useCallback(() => {
-    if (advanceTimerRef.current) return;
-    try {
-      videoRef.current?.pause();
-    } catch {
-      /* ignore */
-    }
-    advanceTimerRef.current = setTimeout(() => {
-      advanceTimerRef.current = null;
-      setIndex((i) => i + 1);
-    }, 150);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-    };
-  }, []);
+  const advance = useCallback(() => setIndex((i) => i + 1), []);
 
   // relógio compartilhado (cronômetro / destaque / vinheta)
   useEffect(() => {
@@ -263,6 +228,7 @@ export function TvPlayer() {
     }
   }, []);
 
+
   const refreshTv = useCallback(
     async (id: string | null) => {
       if (!id) {
@@ -271,7 +237,11 @@ export function TvPlayer() {
       }
       let row: TvRow | null = null;
       try {
-        const { data, error } = await supabase.from("tvs").select(TV_SELECT_COLUMNS).eq("id", id).maybeSingle();
+        const { data, error } = await supabase
+          .from("tvs")
+          .select(TV_SELECT_COLUMNS)
+          .eq("id", id)
+          .maybeSingle();
         if (error || !data) {
           setOffline(true);
           return;
@@ -323,6 +293,7 @@ export function TvPlayer() {
       if (videoRef.current) {
         videoRef.current.muted = cmd.action === "mute";
       }
+
     },
     [refreshTv],
   );
@@ -333,24 +304,26 @@ export function TvPlayer() {
     if (!id) return;
     const channel = supabase
       .channel("tv-" + id)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id }, (payload) => {
-        const row = payload.new as unknown as TvRow;
-        const prev = tvRef.current;
-        // ignora heartbeats: se só last_ping/updated_at mudaram, nada é re-renderizado
-        if (prev && isHeartbeatOnly(prev, row)) return;
-        setTv(row);
-        if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
-        else if (
-          !prev ||
-          row.playlist_id !== prev.playlist_id ||
-          row.event_mode !== prev.event_mode ||
-          row.is_paired !== prev.is_paired
-        ) {
-          loadPlaylist(row.playlist_id, row.event_mode);
-        }
-        if (!row.is_live_active) setLiveFrame(null);
-        runCommand(row.command);
-      })
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "tvs", filter: "id=eq." + id },
+        (payload) => {
+          const row = payload.new as unknown as TvRow;
+          const prev = tvRef.current;
+          setTv(row);
+          if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
+          else if (
+            !prev ||
+            row.playlist_id !== prev.playlist_id ||
+            row.event_mode !== prev.event_mode ||
+            row.is_paired !== prev.is_paired
+          ) {
+            loadPlaylist(row.playlist_id, row.event_mode);
+          }
+          if (!row.is_live_active) setLiveFrame(null);
+          runCommand(row.command);
+        },
+      )
       .on("postgres_changes", { event: "*", schema: "public", table: "playlists" }, () => {
         const t = tvRef.current;
         if (t) loadPlaylist(t.playlist_id, t.event_mode);
@@ -371,7 +344,9 @@ export function TvPlayer() {
         const row = p.new as { message?: string; expires_at?: string };
         if (!row || !row.message) return;
         setAlertMsg(row.message);
-        const ms = row.expires_at ? Math.max(5000, new Date(row.expires_at).getTime() - Date.now()) : 20000;
+        const ms = row.expires_at
+          ? Math.max(5000, new Date(row.expires_at).getTime() - Date.now())
+          : 20000;
         setTimeout(() => setAlertMsg(null), Math.min(ms, 120000));
       })
       .subscribe();
@@ -437,7 +412,9 @@ export function TvPlayer() {
       const id = tvIdRef.current;
       if (!id) return;
       const perf = performance as unknown as { memory?: { usedJSHeapSize: number } };
-      const memory = perf.memory ? Math.round(perf.memory.usedJSHeapSize / (1024 * 1024)) + " MB" : undefined;
+      const memory = perf.memory
+        ? Math.round(perf.memory.usedJSHeapSize / (1024 * 1024)) + " MB"
+        : undefined;
 
       supabase
         .rpc("tv_heartbeat", {
@@ -457,7 +434,11 @@ export function TvPlayer() {
     const guard = setInterval(async () => {
       const id = tvIdRef.current;
       if (!id) return;
-      const { data } = await supabase.from("tvs").select(TV_SELECT_COLUMNS).eq("id", id).maybeSingle();
+      const { data } = await supabase
+        .from("tvs")
+        .select(TV_SELECT_COLUMNS)
+        .eq("id", id)
+        .maybeSingle();
       if (!data) return;
       const row = data as unknown as TvRow;
       const prev = tvRef.current;
@@ -493,6 +474,7 @@ export function TvPlayer() {
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
   currentRef.current = current;
 
+
   // ---------- QR code dinâmico ----------
   useEffect(() => {
     const url = currentQrUrl;
@@ -507,8 +489,7 @@ export function TvPlayer() {
 
   const liveOn = !!(tv && tv.is_live_active);
   const multizone = tv?.layout_mode === "multizone";
-  const portrait =
-    tv?.orientation === "portrait" || tv?.orientation === "9:16" || tv?.orientation === "-90";
+  const portrait = tv?.orientation === "portrait";
   const volume = typeof tv?.volume === "number" ? tv.volume : 100;
   const objectFit: "cover" | "contain" = tv?.media_fit === "cover" ? "cover" : "contain";
   const tickerPosition = tv?.ticker_position || "bottom";
@@ -519,8 +500,13 @@ export function TvPlayer() {
     featured.image_url &&
     (!featured.featured_until || new Date(featured.featured_until).getTime() > now)
   );
-  const welcomeOn = !!(tv?.welcome_message && tv.welcome_until && new Date(tv.welcome_until).getTime() > now);
-  const countdownMs = tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
+  const welcomeOn = !!(
+    tv?.welcome_message &&
+    tv.welcome_until &&
+    new Date(tv.welcome_until).getTime() > now
+  );
+  const countdownMs =
+    tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
   const countdownOn = countdownMs > 0;
 
   // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
@@ -565,13 +551,18 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.media_id, index, liveOn]);
 
-  // temporizador: apenas imagens avançam por duração configurada em banco
-  // vídeos avançam exclusivamente pelo evento nativo onEnded
+  // ---------- temporizador: imagens por duração; vídeos com watchdog de segurança ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
 
-    if (current.type !== "video") {
+    if (current.type === "video") {
+      // fallback genérico até os metadados chegarem (35s)
+      timerRef.current = setTimeout(() => {
+        console.warn("[player] watchdog genérico disparado, avançando mídia");
+        advance();
+      }, 35000);
+    } else {
       timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     }
 
@@ -581,6 +572,22 @@ export function TvPlayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
+  // watchdog dinâmico: duração real do vídeo + 5s
+  const handleVideoMetadata = useCallback(
+    (durationSeconds: number) => {
+      if (!durationSeconds || !isFinite(durationSeconds) || durationSeconds <= 0) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(
+        () => {
+          console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
+          advance();
+        },
+        (durationSeconds + 5) * 1000
+      );
+    },
+    [advance]
+  );
+
   // reinicia spinner a cada mídia
   useEffect(() => {
     setBuffering(false);
@@ -588,57 +595,26 @@ export function TvPlayer() {
     setMediaErrorCode("");
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-      if (hardTimerRef.current) clearTimeout(hardTimerRef.current);
     };
   }, [index]);
 
-  // travamento de rede: 4s parado sem voltar a tocar => pula a mídia
-  const handleWaiting = useCallback(() => {
-    setBuffering(true);
-    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-    stallTimerRef.current = setTimeout(() => {
-      stallTimerRef.current = null;
-      console.warn("[player] vídeo travado por 4s no buffer — avançando");
-      advance();
-    }, 4000);
-  }, [advance]);
-
-  const handleResume = useCallback(() => {
-    setBuffering(false);
-    if (stallTimerRef.current) {
-      clearTimeout(stallTimerRef.current);
-      stallTimerRef.current = null;
-    }
-  }, []);
-
-  // watchdog absoluto: duração do vídeo + 3s (teto de 45s)
-  const handlePlaying = useCallback(
-    (durationSeconds: number) => {
-      handleResume();
-      if (hardTimerRef.current) clearTimeout(hardTimerRef.current);
-      const base = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds + 3 : 45;
-      const limit = Math.min(45, Math.max(5, base)) * 1000;
-      hardTimerRef.current = setTimeout(() => {
-        hardTimerRef.current = null;
-        console.warn("[player] watchdog de duração acionado — avançando");
-        advance();
-      }, limit);
-    },
-    [advance, handleResume],
-  );
 
   const handleMediaError = useCallback(
     (info?: string) => {
-      const errorCode = info || "Desconhecido";
-      console.warn("[player] falha ao decodificar mídia:", currentRef.current?.title || "", errorCode);
+      console.warn(
+        "[player] falha ao decodificar mídia:",
+        currentRef.current?.title || "",
+        info || ""
+      );
       setMediaFailed(true);
-      setMediaErrorCode(String(errorCode));
+      setMediaErrorCode(info || "desconhecido");
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(advance, 2000);
+      errorTimerRef.current = setTimeout(advance, 3000);
     },
-    [advance],
+    [advance]
   );
+
+
 
 
   const overlays = (
@@ -669,10 +645,15 @@ export function TvPlayer() {
             }}
           />
           <p style={{ fontSize: "30px", marginTop: "32px", color: BRAND.yellow }}>
-            {offline ? "Aguardando resposta da nuvem… Revalidando em 3s" : "Sincronizando player…"}
+            {offline
+              ? "Aguardando resposta da nuvem… Revalidando em 3s"
+              : "Sincronizando player…"}
           </p>
-          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>{BRAND.slogan}</p>
+          <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
+            {BRAND.slogan}
+          </p>
         </div>
+
       </Stage>
     );
   }
@@ -682,7 +663,9 @@ export function TvPlayer() {
       <Stage portrait={portrait}>
         <div style={{ textAlign: "center", color: "#FFFFFF", padding: "32px" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "38%", maxWidth: "520px" }} />
-          <p style={{ fontSize: "28px", marginTop: "40px", opacity: 0.85 }}>Código de pareamento desta TV</p>
+          <p style={{ fontSize: "28px", marginTop: "40px", opacity: 0.85 }}>
+            Código de pareamento desta TV
+          </p>
           <div
             style={{
               fontSize: "140px",
@@ -695,8 +678,12 @@ export function TvPlayer() {
           >
             {code}
           </div>
-          <p style={{ fontSize: "30px", marginTop: "24px" }}>Acesse o painel no celular para ativar esta TV</p>
-          <p style={{ fontSize: "20px", marginTop: "56px", color: BRAND.yellow, opacity: 0.9 }}>{BRAND.slogan}</p>
+          <p style={{ fontSize: "30px", marginTop: "24px" }}>
+            Acesse o painel no celular para ativar esta TV
+          </p>
+          <p style={{ fontSize: "20px", marginTop: "56px", color: BRAND.yellow, opacity: 0.9 }}>
+            {BRAND.slogan}
+          </p>
           {offline ? (
             <p style={{ fontSize: "16px", marginTop: "16px", opacity: 0.6 }}>
               Sem conexão com o servidor — tentando novamente…
@@ -744,7 +731,11 @@ export function TvPlayer() {
     return (
       <Stage portrait={portrait}>
         {liveFrame ? (
-          <img src={liveFrame} alt="Transmissão ao vivo" style={{ width: "100%", height: "100%", objectFit }} />
+          <img
+            src={liveFrame}
+            alt="Transmissão ao vivo"
+            style={{ width: "100%", height: "100%", objectFit }}
+          />
         ) : (
           <div style={{ textAlign: "center", color: "#FFFFFF" }}>
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "320px", maxWidth: "60%" }} />
@@ -762,15 +753,7 @@ export function TvPlayer() {
   if (spotlightOn && featured) {
     return (
       <Stage portrait={portrait}>
-        <div
-          style={{
-            position: "absolute",
-            inset: "24px",
-            border: "10px solid " + BRAND.yellow,
-            borderRadius: "22px",
-            overflow: "hidden",
-          }}
-        >
+        <div style={{ position: "absolute", inset: "24px", border: "10px solid " + BRAND.yellow, borderRadius: "22px", overflow: "hidden" }}>
           <img
             src={featured.image_url}
             alt="Destaque do mural"
@@ -853,11 +836,11 @@ export function TvPlayer() {
             fade
             videoRef={videoRef}
             onEnded={advance}
+            onMetadata={handleVideoMetadata}
             onError={handleMediaError}
-            onWaiting={handleWaiting}
-            onResume={handleResume}
-            onPlaying={handlePlaying}
-
+            onFatal={advance}
+            onWaiting={() => setBuffering(true)}
+            onResume={() => setBuffering(false)}
           />
         ) : null}
         {mediaFailed ? (
@@ -911,6 +894,8 @@ export function TvPlayer() {
 
       <Preloader item={nextItem} />
 
+
+
       {multizone ? (
         <>
           <div
@@ -926,7 +911,9 @@ export function TvPlayer() {
             }}
           >
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: "48px" }} />
-            {qrDataUrl ? <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} /> : null}
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} />
+            ) : null}
           </div>
 
           {tickerVisible ? (
@@ -985,7 +972,7 @@ function cornerStyle(position: string): React.CSSProperties {
   return { top: "18px", right: "18px" };
 }
 
-function MediaLayerBase({
+function MediaLayer({
   layer,
   muted,
   volume,
@@ -993,10 +980,11 @@ function MediaLayerBase({
   fade,
   videoRef,
   onEnded,
+  onMetadata,
   onError,
+  onFatal,
   onWaiting,
   onResume,
-  onPlaying,
 }: {
   layer: Layer;
   muted: boolean;
@@ -1005,19 +993,57 @@ function MediaLayerBase({
   fade?: boolean;
   videoRef?: React.MutableRefObject<HTMLVideoElement | null>;
   onEnded?: () => void;
+  onMetadata?: (durationSeconds: number) => void;
   onError?: (info?: string) => void;
+  onFatal?: () => void;
   onWaiting?: () => void;
   onResume?: () => void;
-  onPlaying?: (durationSeconds: number) => void;
 }) {
   const localRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // volume nativo (sem Web Audio) para preservar a aceleração de hardware
+  // Dimensão real do vídeo (já corrigida por rotação EXIF/Matrix pelo
+  // próprio navegador) e dimensão real do container disponível. Usamos os
+  // dois para calcular o enquadramento em PIXELS, em vez de depender do
+  // object-fit do CSS calculado através da cadeia de transform do <Stage>
+  // — no Silk (Fire TV), esse cálculo às vezes ignora a proporção real do
+  // vídeo e estica os pixels, principalmente em clipes verticais de iPhone.
+  const [videoDims, setVideoDims] = useState<{ w: number; h: number } | null>(null);
+  const [containerDims, setContainerDims] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    setVideoDims(null);
+  }, [layer.src]);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const update = () => setContainerDims({ w: node.clientWidth, h: node.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
+  // volume + mute nativo (sem Web Audio) para preservar a aceleração de hardware
   useEffect(() => {
     const el = localRef.current;
     if (!el) return;
     el.volume = Math.min(1, Math.max(0, volume / 100));
-  }, [layer.src, volume]);
+    if (layer.item.type === "video") el.muted = muted;
+  }, [layer.src, volume, muted, layer.item.type]);
+
+  // IMPORTANTE: nenhuma Web Audio API aqui — AudioContext/createMediaElementSource
+  // lança InvalidStateError no WebView do Fire TV e derruba o React (tela branca).
+  //
+  // Não chamamos play() manualmente aqui de propósito: o atributo nativo
+  // `autoPlay` da tag <video> (mais abaixo) já inicia a reprodução sozinho.
+  // Chamar play() de novo aqui competia com esse autoplay nativo e gerava
+  // AbortError ("play() interrompido por um novo load()") — que o catch
+  // antigo rotulava como "autoplay bloqueado" mesmo quando o vídeo já
+  // estava tocando normalmente. O único fallback real agora vive no
+  // onLoadedMetadata, e só age se o autoplay nativo de fato não rodou.
+
 
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
@@ -1045,7 +1071,6 @@ function MediaLayerBase({
     position: "relative",
   };
 
-  // Enquadramento explícito: nunca estica o vídeo (proíbe object-fill)
   const base: React.CSSProperties = {
     width: "100%",
     height: "100%",
@@ -1059,11 +1084,31 @@ function MediaLayerBase({
     animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
   };
 
+  // Enquadramento do vídeo calculado em pixels reais (fallback para
+  // width/height 100% + object-fit só enquanto os metadados do vídeo
+  // atual ainda não carregaram).
+  let videoStyle: React.CSSProperties = base;
+  if (videoDims && containerDims && containerDims.w > 0 && containerDims.h > 0) {
+    const scale =
+      objectFit === "cover"
+        ? Math.max(containerDims.w / videoDims.w, containerDims.h / videoDims.h)
+        : Math.min(containerDims.w / videoDims.w, containerDims.h / videoDims.h);
+    videoStyle = {
+      width: `${Math.round(videoDims.w * scale)}px`,
+      height: `${Math.round(videoDims.h * scale)}px`,
+      position: "static",
+      backgroundColor: "#000000",
+      transform: "translate3d(0, 0, 0)",
+      backfaceVisibility: "hidden",
+      animation: fade ? "cf-fade-in 0.2s ease-out" : undefined,
+    };
+  }
+
   const mediaKey = layer.item.media_id || layer.src;
 
   if (layer.item.type === "video") {
     return (
-      <div style={container}>
+      <div ref={containerRef} style={container}>
         <video
           key={mediaKey}
           ref={(el) => {
@@ -1081,25 +1126,41 @@ function MediaLayerBase({
           preload="auto"
           controls={false}
           disablePictureInPicture
-          // Enquadramento 100% via inline style — nunca deixa o vídeo sem object-fit
-          style={base}
           onLoadedMetadata={(e) => {
             const el = e.currentTarget;
             el.volume = Math.min(1, Math.max(0, volume / 100));
+            if (el.videoWidth && el.videoHeight) {
+              setVideoDims({ w: el.videoWidth, h: el.videoHeight });
+            }
+            if (onMetadata) onMetadata(el.duration);
+            // só tenta play() se o autoplay nativo realmente não iniciou —
+            // evita competir com ele e mascarar AbortError como bloqueio.
+            if (el.paused) {
+              const play = el.play();
+              if (play && typeof play.catch === "function") {
+                play.catch((err) => {
+                  el.muted = true;
+                  el.play().catch((err2) => {
+                    const reason =
+                      (err2 && (err2.name || err2.message)) ||
+                      (err && (err.name || err.message)) ||
+                      "desconhecido";
+                    onError && onError("play_bloqueado: " + reason);
+                  });
+                });
+              }
+            }
           }}
           onEnded={onEnded}
           onError={(e) => {
-            const errorCode = e.currentTarget.error ? e.currentTarget.error.code : "Desconhecido";
-            console.warn("[player] erro de vídeo:", errorCode);
-            if (onError) onError(String(errorCode));
+            const code = e.currentTarget.error?.code ?? localRef.current?.error?.code;
+            if (onError) onError(String(code ?? "desconhecido"));
           }}
           onWaiting={onWaiting}
           onStalled={onWaiting}
-          onPlaying={(e) => {
-            if (onPlaying) onPlaying(e.currentTarget.duration);
-            else if (onResume) onResume();
-          }}
+          onPlaying={onResume}
           onCanPlay={onResume}
+          style={videoStyle}
         />
       </div>
     );
@@ -1110,29 +1171,27 @@ function MediaLayerBase({
         key={mediaKey}
         src={layer.src}
         alt={layer.item.title}
-        // Enquadramento 100% via inline style — nunca deixa a imagem sem object-fit
-        style={base}
+        className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
         onError={() => {
           console.warn("Falha ao carregar imagem:", layer.src);
           if (onError) onError("IMG_LOAD");
         }}
+        style={base}
       />
     </div>
   );
 }
 
-/** Isolado: só re-renderiza quando a mídia (id/url) muda — ticker, relógio e QR não tocam no <video>. */
-const MediaLayer = memo(MediaLayerBase, (prev, next) => {
-  return (
-    prev.layer.key === next.layer.key &&
-    prev.layer.item.media_id === next.layer.item.media_id &&
-    prev.layer.src === next.layer.src &&
-    prev.objectFit === next.objectFit &&
-    prev.muted === next.muted
-  );
-});
 
-function SponsorRail({ sponsors, position }: { sponsors: EventSponsor[]; position: "top" | "bottom" }) {
+
+
+function SponsorRail({
+  sponsors,
+  position,
+}: {
+  sponsors: EventSponsor[];
+  position: "top" | "bottom";
+}) {
   const loop = sponsors.concat(sponsors);
   return (
     <div
@@ -1151,7 +1210,12 @@ function SponsorRail({ sponsors, position }: { sponsors: EventSponsor[]; positio
     >
       <div className="cf-ticker" style={{ display: "flex", alignItems: "center", gap: "48px" }}>
         {loop.map((s, i) => (
-          <img key={s.id + "-" + i} src={s.image_url} alt={s.name} style={{ height: "56px", objectFit: "contain" }} />
+          <img
+            key={s.id + "-" + i}
+            src={s.image_url}
+            alt={s.name}
+            style={{ height: "56px", objectFit: "contain" }}
+          />
         ))}
       </div>
     </div>
@@ -1176,7 +1240,9 @@ function Countdown({ label, ms }: { label: string | null; ms: number }) {
         color: "#FFFFFF",
       }}
     >
-      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>{label || "Começa em"}</p>
+      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>
+        {label || "Começa em"}
+      </p>
       <p style={{ fontSize: "56px", fontWeight: 800, color: BRAND.yellow, lineHeight: 1.1 }}>
         {mm}:{ss}
       </p>
@@ -1250,14 +1316,15 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
 
   const inner: React.CSSProperties = portrait
     ? {
-        // Rotação 9:16 (-90°): inverte largura/altura e centraliza na tela
-        position: "fixed",
+        position: "absolute",
         top: "50%",
         left: "50%",
         width: "100vh",
         height: "100vw",
-        transform: "translate(-50%, -50%) rotate(-90deg)",
-        transformOrigin: "center",
+        transform: "translate(-50%, -50%) rotate(-90deg) translate3d(0, 0, 0)",
+        transformOrigin: "center center",
+        backfaceVisibility: "hidden",
+        willChange: "transform",
         backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
@@ -1267,7 +1334,6 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
     : {
         position: "absolute",
         inset: 0,
-        backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -1313,31 +1379,9 @@ function BufferSpinner() {
 }
 
 /** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
-/** Pré-carrega a próxima mídia (vídeo oculto com preload=auto ou Image em memória). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  useEffect(() => {
-    if (!item || item.type === "video") return;
-    try {
-      const img = new Image();
-      img.src = item.url;
-    } catch {
-      /* ignore */
-    }
-  }, [item?.media_id, item?.url, item?.type]);
-
-  if (!item) return null;
-  if (item.type === "video") {
-    return (
-      <video
-        key={item.media_id}
-        src={item.url}
-        preload="auto"
-        muted
-        playsInline
-        style={{ display: "none" }}
-      />
-    );
-  }
+  if (!item || item.type === "video") return null;
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
+
 
