@@ -507,7 +507,8 @@ export function TvPlayer() {
 
   const liveOn = !!(tv && tv.is_live_active);
   const multizone = tv?.layout_mode === "multizone";
-  const portrait = tv?.orientation === "portrait";
+  const portrait =
+    tv?.orientation === "portrait" || tv?.orientation === "9:16" || tv?.orientation === "-90";
   const volume = typeof tv?.volume === "number" ? tv.volume : 100;
   const objectFit: "cover" | "contain" = tv?.media_fit === "cover" ? "cover" : "contain";
   const tickerPosition = tv?.ticker_position || "bottom";
@@ -1044,6 +1045,7 @@ function MediaLayerBase({
     position: "relative",
   };
 
+  // Enquadramento explícito: nunca estica o vídeo (proíbe object-fill)
   const base: React.CSSProperties = {
     width: "100%",
     height: "100%",
@@ -1079,7 +1081,8 @@ function MediaLayerBase({
           preload="auto"
           controls={false}
           disablePictureInPicture
-          className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
+          // Enquadramento 100% via inline style — nunca deixa o vídeo sem object-fit
+          style={base}
           onLoadedMetadata={(e) => {
             const el = e.currentTarget;
             el.volume = Math.min(1, Math.max(0, volume / 100));
@@ -1097,7 +1100,6 @@ function MediaLayerBase({
             else if (onResume) onResume();
           }}
           onCanPlay={onResume}
-          style={base}
         />
       </div>
     );
@@ -1108,12 +1110,12 @@ function MediaLayerBase({
         key={mediaKey}
         src={layer.src}
         alt={layer.item.title}
-        className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
+        // Enquadramento 100% via inline style — nunca deixa a imagem sem object-fit
+        style={base}
         onError={() => {
           console.warn("Falha ao carregar imagem:", layer.src);
           if (onError) onError("IMG_LOAD");
         }}
-        style={base}
       />
     </div>
   );
@@ -1248,15 +1250,14 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
 
   const inner: React.CSSProperties = portrait
     ? {
-        position: "absolute",
+        // Rotação 9:16 (-90°): inverte largura/altura e centraliza na tela
+        position: "fixed",
         top: "50%",
         left: "50%",
         width: "100vh",
         height: "100vw",
-        transform: "translate(-50%, -50%) rotate(-90deg) translate3d(0, 0, 0)",
-        transformOrigin: "center center",
-        backfaceVisibility: "hidden",
-        willChange: "transform",
+        transform: "translate(-50%, -50%) rotate(-90deg)",
+        transformOrigin: "center",
         backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
@@ -1266,6 +1267,7 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
     : {
         position: "absolute",
         inset: 0,
+        backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
