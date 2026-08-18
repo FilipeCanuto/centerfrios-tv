@@ -68,6 +68,9 @@ export function TvPlayer() {
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
@@ -584,8 +587,45 @@ export function TvPlayer() {
     setMediaErrorCode("");
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+      if (hardTimerRef.current) clearTimeout(hardTimerRef.current);
     };
   }, [index]);
+
+  // travamento de rede: 4s parado sem voltar a tocar => pula a mídia
+  const handleWaiting = useCallback(() => {
+    setBuffering(true);
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = setTimeout(() => {
+      stallTimerRef.current = null;
+      console.warn("[player] vídeo travado por 4s no buffer — avançando");
+      advance();
+    }, 4000);
+  }, [advance]);
+
+  const handleResume = useCallback(() => {
+    setBuffering(false);
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
+
+  // watchdog absoluto: duração do vídeo + 3s (teto de 45s)
+  const handlePlaying = useCallback(
+    (durationSeconds: number) => {
+      handleResume();
+      if (hardTimerRef.current) clearTimeout(hardTimerRef.current);
+      const base = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds + 3 : 45;
+      const limit = Math.min(45, Math.max(5, base)) * 1000;
+      hardTimerRef.current = setTimeout(() => {
+        hardTimerRef.current = null;
+        console.warn("[player] watchdog de duração acionado — avançando");
+        advance();
+      }, limit);
+    },
+    [advance, handleResume],
+  );
 
   const handleMediaError = useCallback(
     (info?: string) => {
@@ -598,6 +638,7 @@ export function TvPlayer() {
     },
     [advance],
   );
+
 
   const overlays = (
     <>
@@ -812,8 +853,10 @@ export function TvPlayer() {
             videoRef={videoRef}
             onEnded={advance}
             onError={handleMediaError}
-            onWaiting={() => setBuffering(true)}
-            onResume={() => setBuffering(false)}
+            onWaiting={handleWaiting}
+            onResume={handleResume}
+            onPlaying={handlePlaying}
+
           />
         ) : null}
         {mediaFailed ? (
@@ -952,6 +995,7 @@ function MediaLayerBase({
   onError,
   onWaiting,
   onResume,
+  onPlaying,
 }: {
   layer: Layer;
   muted: boolean;
@@ -963,6 +1007,7 @@ function MediaLayerBase({
   onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
+  onPlaying?: (durationSeconds: number) => void;
 }) {
   const localRef = useRef<HTMLVideoElement | null>(null);
 
@@ -1047,7 +1092,10 @@ function MediaLayerBase({
           }}
           onWaiting={onWaiting}
           onStalled={onWaiting}
-          onPlaying={onResume}
+          onPlaying={(e) => {
+            if (onPlaying) onPlaying(e.currentTarget.duration);
+            else if (onResume) onResume();
+          }}
           onCanPlay={onResume}
           style={base}
         />
@@ -1263,7 +1311,31 @@ function BufferSpinner() {
 }
 
 /** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
+/** Pré-carrega a próxima mídia (vídeo oculto com preload=auto ou Image em memória). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  if (!item || item.type === "video") return null;
+  useEffect(() => {
+    if (!item || item.type === "video") return;
+    try {
+      const img = new Image();
+      img.src = item.url;
+    } catch {
+      /* ignore */
+    }
+  }, [item?.media_id, item?.url, item?.type]);
+
+  if (!item) return null;
+  if (item.type === "video") {
+    return (
+      <video
+        key={item.media_id}
+        src={item.url}
+        preload="auto"
+        muted
+        playsInline
+        style={{ display: "none" }}
+      />
+    );
+  }
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
+
