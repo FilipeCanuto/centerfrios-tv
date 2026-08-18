@@ -1250,15 +1250,14 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
 
   const inner: React.CSSProperties = portrait
     ? {
-        position: "absolute",
+        // Rotação 9:16 (-90°): inverte largura/altura e centraliza na tela
+        position: "fixed",
         top: "50%",
         left: "50%",
         width: "100vh",
         height: "100vw",
-        transform: "translate(-50%, -50%) rotate(-90deg) translate3d(0, 0, 0)",
-        transformOrigin: "center center",
-        backfaceVisibility: "hidden",
-        willChange: "transform",
+        transform: "translate(-50%, -50%) rotate(-90deg)",
+        transformOrigin: "center",
         backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
@@ -1268,6 +1267,7 @@ function Stage({ children, portrait }: { children: React.ReactNode; portrait: bo
     : {
         position: "absolute",
         inset: 0,
+        backgroundColor: "#000000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
