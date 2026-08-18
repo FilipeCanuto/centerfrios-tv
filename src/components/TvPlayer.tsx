@@ -853,8 +853,10 @@ export function TvPlayer() {
             videoRef={videoRef}
             onEnded={advance}
             onError={handleMediaError}
-            onWaiting={() => setBuffering(true)}
-            onResume={() => setBuffering(false)}
+            onWaiting={handleWaiting}
+            onResume={handleResume}
+            onPlaying={handlePlaying}
+
           />
         ) : null}
         {mediaFailed ? (
