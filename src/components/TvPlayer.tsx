@@ -1263,7 +1263,31 @@ function BufferSpinner() {
 }
 
 /** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
+/** Pré-carrega a próxima mídia (vídeo oculto com preload=auto ou Image em memória). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  if (!item || item.type === "video") return null;
+  useEffect(() => {
+    if (!item || item.type === "video") return;
+    try {
+      const img = new Image();
+      img.src = item.url;
+    } catch {
+      /* ignore */
+    }
+  }, [item?.media_id, item?.url, item?.type]);
+
+  if (!item) return null;
+  if (item.type === "video") {
+    return (
+      <video
+        key={item.media_id}
+        src={item.url}
+        preload="auto"
+        muted
+        playsInline
+        style={{ display: "none" }}
+      />
+    );
+  }
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
+
