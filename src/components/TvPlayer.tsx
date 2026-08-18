@@ -995,6 +995,7 @@ function MediaLayerBase({
   onError,
   onWaiting,
   onResume,
+  onPlaying,
 }: {
   layer: Layer;
   muted: boolean;
@@ -1006,6 +1007,7 @@ function MediaLayerBase({
   onError?: (info?: string) => void;
   onWaiting?: () => void;
   onResume?: () => void;
+  onPlaying?: (durationSeconds: number) => void;
 }) {
   const localRef = useRef<HTMLVideoElement | null>(null);
 
@@ -1090,7 +1092,10 @@ function MediaLayerBase({
           }}
           onWaiting={onWaiting}
           onStalled={onWaiting}
-          onPlaying={onResume}
+          onPlaying={(e) => {
+            if (onPlaying) onPlaying(e.currentTarget.duration);
+            else if (onResume) onResume();
+          }}
           onCanPlay={onResume}
           style={base}
         />
