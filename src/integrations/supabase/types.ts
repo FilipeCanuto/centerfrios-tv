@@ -374,7 +374,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      register_tv: { Args: { _code: string }; Returns: string }
       register_tv_device:
         | { Args: { _code?: string; _device_uuid: string }; Returns: Json }
         | { Args: { p_device_uuid: string }; Returns: Json }
