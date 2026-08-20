@@ -104,26 +104,76 @@ export function TvPlayer() {
 
     async function boot() {
       setStatus("connecting");
-      const deviceUuid = getDeviceUuid();
 
-      const cached = await loadManifest(MANIFEST_KEY);
-      if (cached && cached.length > 0 && !cancelled) setItems(cached);
+      // fallback imediato: id/código já conhecidos deste dispositivo
+      let cachedId: string | null = null;
+      let cachedCode: string | null = null;
+      try {
+        cachedId = window.localStorage.getItem(TV_STORAGE.tvId);
+        cachedCode = window.localStorage.getItem(TV_STORAGE.tvCode);
+      } catch {
+        /* storage indisponível no Silk */
+      }
+      if (cachedId) tvIdRef.current = cachedId;
+      if (cachedCode) setCode(cachedCode);
 
-      const res = await registerWithBackoff(deviceUuid);
-      if (cancelled || !res) return;
+      // watchdog de inicialização: nunca ficar preso em "Sincronizando player…"
+      bootTimeoutRef.current = setTimeout(() => {
+        setStatus((s) => {
+          if (s !== "boot" && s !== "connecting") return s;
+          console.warn("[player] watchdog de inicialização (5s) disparado");
+          return tvIdRef.current ? "empty" : "pairing";
+        });
+      }, 5000);
 
-      window.localStorage.setItem(TV_STORAGE.tvId, res.id);
-      window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
-      tvIdRef.current = res.id;
-      setCode(res.pairing_code);
+      let deviceUuid = "";
+      try {
+        deviceUuid = getDeviceUuid();
+      } catch {
+        deviceUuid = "dev-fallback-" + String(Date.now());
+      }
 
-      await refreshTv(res.id);
+      try {
+        const cached = await loadManifest(MANIFEST_KEY);
+        if (cached && cached.length > 0 && !cancelled) setItems(cached);
+      } catch {
+        /* cache local indisponível */
+      }
+
+      try {
+        const res = await registerWithBackoff(deviceUuid);
+        if (cancelled || !res) {
+          if (cachedId) await refreshTv(cachedId);
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(TV_STORAGE.tvId, res.id);
+          window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
+        } catch {
+          /* storage indisponível */
+        }
+        tvIdRef.current = res.id;
+        setCode(res.pairing_code);
+
+        await refreshTv(res.id);
+      } catch (err) {
+        console.warn("[player] falha na inicialização:", err);
+      } finally {
+        if (!cancelled) {
+          setStatus((s) =>
+            s === "boot" || s === "connecting" ? (tvIdRef.current ? "empty" : "pairing") : s,
+          );
+        }
+      }
     }
 
     boot();
     return () => {
       cancelled = true;
+      if (bootTimeoutRef.current) clearTimeout(bootTimeoutRef.current);
     };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
