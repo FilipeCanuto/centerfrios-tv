@@ -843,14 +843,34 @@ export function TvPlayer() {
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
-            {status !== "empty" && items.length > 0
-              ? "Sincronizando player…"
-              : tv && tv.playlist_id
-                ? "Playlist vinculada não possui mídias cadastradas"
-                : "Nenhum conteúdo vinculado a esta TV"}
+            {tv && tv.playlist_id
+              ? "Playlist vinculada não possui mídias cadastradas"
+              : "Nenhum conteúdo vinculado a esta TV"}
           </p>
+          {!tv || !tv.playlist_id ? (
+            <>
+              <p style={{ fontSize: "24px", marginTop: "24px", opacity: 0.85 }}>
+                Código de pareamento desta TV
+              </p>
+              <div
+                style={{
+                  fontSize: "120px",
+                  lineHeight: 1.05,
+                  fontWeight: 800,
+                  letterSpacing: "14px",
+                  color: BRAND.yellow,
+                }}
+              >
+                {code || "······"}
+              </div>
+              <p style={{ fontSize: "24px", marginTop: "8px" }}>
+                Acesse o painel no celular para ativar esta TV
+              </p>
+            </>
+          ) : null}
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
+
         {overlays}
       </Stage>
     );
