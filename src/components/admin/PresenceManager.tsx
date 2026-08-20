@@ -70,7 +70,7 @@ export function PresenceManager() {
     };
   }, [load]);
 
-  async function patchTv(id: string, patch: Record<string, unknown>) {
+  async function patchTv(id: string, patch: { show_presence_qr?: boolean; presence_qr_position?: string }) {
     setTvs((prev) => prev.map((t) => (t.id === id ? ({ ...t, ...patch } as TvRow) : t)));
     const { error } = await supabase.from("tvs").update(patch).eq("id", id);
     if (error) {
@@ -81,7 +81,7 @@ export function PresenceManager() {
     toast.success("Configuração enviada para a TV");
   }
 
-  async function applyAll(patch: Record<string, unknown>) {
+  async function applyAll(patch: { show_presence_qr?: boolean; presence_qr_position?: string }) {
     if (!tvs.length) return;
     setTvs((prev) => prev.map((t) => ({ ...t, ...patch }) as TvRow));
     const { error } = await supabase

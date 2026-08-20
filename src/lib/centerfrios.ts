@@ -67,6 +67,16 @@ export type TvRow = {
   countdown_ends_at: string | null;
   welcome_message: string | null;
   welcome_until: string | null;
+  show_presence_qr: boolean;
+  presence_qr_position: string;
+};
+
+export type EventCheckin = {
+  id: string;
+  full_name: string;
+  phone: string;
+  company: string;
+  created_at: string;
 };
 
 export type EventPhoto = {
@@ -113,7 +123,7 @@ export type AlertTemplate = {
 };
 
 export const TV_SELECT_COLUMNS =
-  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until";
+  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position";
 
 
 export function makeNonce(): string {
