@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as EnviarRouteImport } from './routes/enviar'
 import { Route as PlayerRouteImport } from './routes/player'
+import { Route as PresencaRouteImport } from './routes/presenca'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const IndexRoute = IndexRouteImport.update({
@@ -40,6 +41,11 @@ const PlayerRoute = PlayerRouteImport.update({
   path: '/player',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PresencaRoute = PresencaRouteImport.update({
+  id: '/presenca',
+  path: '/presenca',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/enviar': typeof EnviarRoute
   '/player': typeof PlayerRoute
+  '/presenca': typeof PresencaRoute
   '/admin': typeof AuthenticatedAdminRoute
 }
 export interface FileRoutesByTo {
@@ -58,6 +65,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/enviar': typeof EnviarRoute
   '/player': typeof PlayerRoute
+  '/presenca': typeof PresencaRoute
   '/admin': typeof AuthenticatedAdminRoute
 }
 export interface FileRoutesById {
@@ -67,13 +75,14 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/enviar': typeof EnviarRoute
   '/player': typeof PlayerRoute
+  '/presenca': typeof PresencaRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/enviar' | '/player' | '/admin'
+  fullPaths: '/' | '/auth' | '/enviar' | '/player' | '/presenca' | '/admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/enviar' | '/player' | '/admin'
+  to: '/' | '/auth' | '/enviar' | '/player' | '/presenca' | '/admin'
   id:
     | '__root__'
     | '/'
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/enviar'
     | '/player'
+    | '/presenca'
     | '/_authenticated/admin'
   fileRoutesById: FileRoutesById
 }
@@ -90,6 +100,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   EnviarRoute: typeof EnviarRoute
   PlayerRoute: typeof PlayerRoute
+  PresencaRoute: typeof PresencaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -129,6 +140,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlayerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/presenca': {
+      id: '/presenca'
+      path: '/presenca'
+      fullPath: '/presenca'
+      preLoaderRoute: typeof PresencaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -156,6 +174,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   EnviarRoute: EnviarRoute,
   PlayerRoute: PlayerRoute,
+  PresencaRoute: PresencaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

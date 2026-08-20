@@ -623,9 +623,13 @@ export function TvPlayer() {
       {sponsors.length > 0 ? (
         <SponsorRail sponsors={sponsors} position={tickerPosition === "top" ? "bottom" : "top"} />
       ) : null}
+      {tv?.show_presence_qr ? (
+        <PresenceQr position={tv.presence_qr_position || "bottom-right"} />
+      ) : null}
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
   );
+
 
   // ---------- render ----------
   if (status === "boot" || status === "connecting") {
@@ -1385,3 +1389,53 @@ function Preloader({ item }: { item: ResolvedItem | null }) {
 }
 
 
+
+function PresenceQr({ position }: { position: string }) {
+  const [href, setHref] = useState("");
+  useEffect(() => {
+    setHref(window.location.origin + "/presenca");
+  }, []);
+  if (!href) return null;
+  const src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(href);
+  const pos: React.CSSProperties =
+    position === "top-left"
+      ? { top: "24px", left: "24px" }
+      : position === "top-right"
+        ? { top: "24px", right: "24px" }
+        : position === "bottom-left"
+          ? { bottom: "110px", left: "24px" }
+          : { bottom: "110px", right: "24px" };
+  return (
+    <div
+      style={{
+        position: "absolute",
+        zIndex: 60,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "8px",
+        backgroundColor: "rgba(10,57,129,0.92)",
+        borderRadius: "18px",
+        padding: "14px",
+        boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
+        ...pos,
+      }}
+    >
+      <img
+        src={src}
+        alt="QR Code Presença"
+        style={{
+          width: "150px",
+          height: "150px",
+          borderRadius: "10px",
+          padding: "8px",
+          backgroundColor: "#FFFFFF",
+        }}
+      />
+      <span style={{ color: "#FFC700", fontSize: "20px", fontWeight: 800 }}>
+        Confirme sua Presença
+      </span>
+    </div>
+  );
+}

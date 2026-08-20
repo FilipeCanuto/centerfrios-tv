@@ -59,6 +59,30 @@ export type Database = {
         }
         Relationships: []
       }
+      event_checkins: {
+        Row: {
+          company: string
+          created_at: string
+          full_name: string
+          id: string
+          phone: string
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          full_name: string
+          id?: string
+          phone: string
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          full_name?: string
+          id?: string
+          phone?: string
+        }
+        Relationships: []
+      }
       event_photos: {
         Row: {
           created_at: string
@@ -248,9 +272,11 @@ export type Database = {
           orientation: string
           pairing_code: string
           playlist_id: string | null
+          presence_qr_position: string
           qr_position: string
           qr_url: string | null
           screen_resolution: string | null
+          show_presence_qr: boolean
           sponsors_enabled: boolean
           ticker_position: string
           ticker_text: string | null
@@ -278,9 +304,11 @@ export type Database = {
           orientation?: string
           pairing_code: string
           playlist_id?: string | null
+          presence_qr_position?: string
           qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          show_presence_qr?: boolean
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
@@ -308,9 +336,11 @@ export type Database = {
           orientation?: string
           pairing_code?: string
           playlist_id?: string | null
+          presence_qr_position?: string
           qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          show_presence_qr?: boolean
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
