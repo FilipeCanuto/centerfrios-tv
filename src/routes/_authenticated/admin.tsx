@@ -9,6 +9,7 @@ import { TvManager } from "@/components/admin/TvManager";
 import { LiveBroadcast } from "@/components/admin/LiveBroadcast";
 import { EventsManager } from "@/components/admin/EventsManager";
 import { AlertsManager } from "@/components/admin/AlertsManager";
+import { PresenceManager } from "@/components/admin/PresenceManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ import {
   Radio,
   PartyPopper,
   Megaphone,
+  QrCode,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -155,7 +157,7 @@ function AdminPage() {
           </div>
 
           <Tabs defaultValue="tvs" className="mt-6">
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm sm:grid-cols-6">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm sm:grid-cols-7">
               <TabsTrigger value="tvs" className={TAB_TRIGGER}>
                 <MonitorPlay className="h-4 w-4" /> TVs <Badge value={counts.tvs} />
               </TabsTrigger>
@@ -170,6 +172,9 @@ function AdminPage() {
               </TabsTrigger>
               <TabsTrigger value="alerts" className={TAB_TRIGGER}>
                 <Megaphone className="h-4 w-4" /> Avisos
+              </TabsTrigger>
+              <TabsTrigger value="presence" className={TAB_TRIGGER}>
+                <QrCode className="h-4 w-4" /> Presença
               </TabsTrigger>
               <TabsTrigger value="events" className={TAB_TRIGGER}>
                 <PartyPopper className="h-4 w-4" /> Eventos <Badge value={counts.pending} />
@@ -190,6 +195,9 @@ function AdminPage() {
             </TabsContent>
             <TabsContent value="alerts" className="mt-5">
               <AlertsManager />
+            </TabsContent>
+            <TabsContent value="presence" className="mt-5">
+              <PresenceManager />
             </TabsContent>
             <TabsContent value="events" className="mt-5">
               <EventsManager onChanged={refreshCounts} />
