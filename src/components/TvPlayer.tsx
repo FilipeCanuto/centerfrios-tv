@@ -7,10 +7,13 @@ import {
   TV_SELECT_COLUMNS,
   TV_STORAGE,
   getDeviceUuid,
+  parsePlaylistItems,
   type EventPhoto,
   type EventSponsor,
+  type MediaRow,
   type ResolvedItem,
   type TvRow,
+
 } from "@/lib/centerfrios";
 
 import {
@@ -210,7 +213,41 @@ export function TvPlayer() {
             });
           });
         }
+
+        // Fallback: se a RPC falhar ou vier vazia, busca direta (leitura pública)
+        if (resolved.length === 0) {
+          const { data: pl } = await supabase
+            .from("playlists")
+            .select("items")
+            .eq("id", playlistId)
+            .maybeSingle();
+          const parsed = parsePlaylistItems(pl ? (pl as { items: unknown }).items : []);
+          if (parsed.length) {
+            const ids = parsed.map((p) => p.media_id);
+            const { data: medias } = await supabase
+              .from("media")
+              .select("id,title,url,type,duration,qr_url")
+              .in("id", ids);
+            const byId: Record<string, MediaRow> = {};
+            ((medias || []) as unknown as MediaRow[]).forEach((m) => {
+              byId[m.id] = m;
+            });
+            parsed.forEach((p) => {
+              const m = byId[p.media_id];
+              if (!m || !m.url) return;
+              resolved.push({
+                media_id: m.id,
+                url: m.url,
+                type: m.type,
+                title: m.title,
+                qr_url: m.qr_url,
+                duration: p.custom_duration || m.duration || 10,
+              });
+            });
+          }
+        }
       }
+
 
       if (eventMode) {
         const { data: photos } = await supabase
