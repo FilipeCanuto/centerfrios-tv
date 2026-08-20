@@ -53,6 +53,8 @@ export function TvPlayer() {
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bootTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
@@ -104,26 +106,76 @@ export function TvPlayer() {
 
     async function boot() {
       setStatus("connecting");
-      const deviceUuid = getDeviceUuid();
 
-      const cached = await loadManifest(MANIFEST_KEY);
-      if (cached && cached.length > 0 && !cancelled) setItems(cached);
+      // fallback imediato: id/código já conhecidos deste dispositivo
+      let cachedId: string | null = null;
+      let cachedCode: string | null = null;
+      try {
+        cachedId = window.localStorage.getItem(TV_STORAGE.tvId);
+        cachedCode = window.localStorage.getItem(TV_STORAGE.tvCode);
+      } catch {
+        /* storage indisponível no Silk */
+      }
+      if (cachedId) tvIdRef.current = cachedId;
+      if (cachedCode) setCode(cachedCode);
 
-      const res = await registerWithBackoff(deviceUuid);
-      if (cancelled || !res) return;
+      // watchdog de inicialização: nunca ficar preso em "Sincronizando player…"
+      bootTimeoutRef.current = setTimeout(() => {
+        setStatus((s) => {
+          if (s !== "boot" && s !== "connecting") return s;
+          console.warn("[player] watchdog de inicialização (5s) disparado");
+          return tvIdRef.current ? "empty" : "pairing";
+        });
+      }, 5000);
 
-      window.localStorage.setItem(TV_STORAGE.tvId, res.id);
-      window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
-      tvIdRef.current = res.id;
-      setCode(res.pairing_code);
+      let deviceUuid = "";
+      try {
+        deviceUuid = getDeviceUuid();
+      } catch {
+        deviceUuid = "dev-fallback-" + String(Date.now());
+      }
 
-      await refreshTv(res.id);
+      try {
+        const cached = await loadManifest(MANIFEST_KEY);
+        if (cached && cached.length > 0 && !cancelled) setItems(cached);
+      } catch {
+        /* cache local indisponível */
+      }
+
+      try {
+        const res = await registerWithBackoff(deviceUuid);
+        if (cancelled || !res) {
+          if (cachedId) await refreshTv(cachedId);
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(TV_STORAGE.tvId, res.id);
+          window.localStorage.setItem(TV_STORAGE.tvCode, res.pairing_code);
+        } catch {
+          /* storage indisponível */
+        }
+        tvIdRef.current = res.id;
+        setCode(res.pairing_code);
+
+        await refreshTv(res.id);
+      } catch (err) {
+        console.warn("[player] falha na inicialização:", err);
+      } finally {
+        if (!cancelled) {
+          setStatus((s) =>
+            s === "boot" || s === "connecting" ? (tvIdRef.current ? "empty" : "pairing") : s,
+          );
+        }
+      }
     }
 
     boot();
     return () => {
       cancelled = true;
+      if (bootTimeoutRef.current) clearTimeout(bootTimeoutRef.current);
     };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -791,14 +843,34 @@ export function TvPlayer() {
         <div style={{ textAlign: "center", color: "#FFFFFF" }}>
           <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "34%", maxWidth: "460px" }} />
           <p style={{ fontSize: "28px", marginTop: "32px", opacity: 0.8 }}>
-            {status !== "empty" && items.length > 0
-              ? "Sincronizando player…"
-              : tv && tv.playlist_id
-                ? "Playlist vinculada não possui mídias cadastradas"
-                : "Nenhum conteúdo vinculado a esta TV"}
+            {tv && tv.playlist_id
+              ? "Playlist vinculada não possui mídias cadastradas"
+              : "Nenhum conteúdo vinculado a esta TV"}
           </p>
+          {!tv || !tv.playlist_id ? (
+            <>
+              <p style={{ fontSize: "24px", marginTop: "24px", opacity: 0.85 }}>
+                Código de pareamento desta TV
+              </p>
+              <div
+                style={{
+                  fontSize: "120px",
+                  lineHeight: 1.05,
+                  fontWeight: 800,
+                  letterSpacing: "14px",
+                  color: BRAND.yellow,
+                }}
+              >
+                {code || "······"}
+              </div>
+              <p style={{ fontSize: "24px", marginTop: "8px" }}>
+                Acesse o painel no celular para ativar esta TV
+              </p>
+            </>
+          ) : null}
           <p style={{ fontSize: "20px", marginTop: "12px", color: BRAND.yellow }}>{BRAND.slogan}</p>
         </div>
+
         {overlays}
       </Stage>
     );
