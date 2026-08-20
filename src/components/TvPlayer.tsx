@@ -623,9 +623,13 @@ export function TvPlayer() {
       {sponsors.length > 0 ? (
         <SponsorRail sponsors={sponsors} position={tickerPosition === "top" ? "bottom" : "top"} />
       ) : null}
+      {tv?.show_presence_qr ? (
+        <PresenceQr position={tv.presence_qr_position || "bottom-right"} />
+      ) : null}
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
   );
+
 
   // ---------- render ----------
   if (status === "boot" || status === "connecting") {
