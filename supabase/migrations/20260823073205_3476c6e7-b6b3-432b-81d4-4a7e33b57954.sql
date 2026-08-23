@@ -1,0 +1,1 @@
+GRANT SELECT (show_presence_qr, presence_qr_position) ON public.tvs TO anon;

@@ -1,20 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@tanstack/react-router";
-import { PlayerErrorBoundary } from "@/components/PlayerErrorBoundary";
-import { TvPlayer } from "@/components/TvPlayer";
+import { useEffect } from "react";
 
-const PLAYER_GLOBAL_CSS = `
-html, body, #root, #app {
-  background-color: #000000 !important;
-  color: #ffffff !important;
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  overflow: hidden;
-}
-`;
-
-
+/**
+ * A URL /player é preservada para os aparelhos já pareados em campo, mas o
+ * player agora roda 100% fora do React/TanStack Router: o engine imperativo
+ * vive em /player.html + /player-engine.js. Aqui só redirecionamos.
+ */
 export const Route = createFileRoute("/player")({
   head: () => ({
     meta: [
@@ -33,25 +25,19 @@ export const Route = createFileRoute("/player")({
   component: PlayerRoute,
 });
 
+function PlayerRedirect() {
+  useEffect(() => {
+    window.location.replace("/player.html" + window.location.search);
+  }, []);
+  return null;
+}
+
 function PlayerRoute() {
   return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: PLAYER_GLOBAL_CSS }} />
-      <PlayerErrorBoundary>
-        <ClientOnly
-          fallback={
-            <div
-              style={{
-                minHeight: "100vh",
-                backgroundColor: "#000000",
-              }}
-            />
-
-          }
-        >
-          <TvPlayer />
-        </ClientOnly>
-      </PlayerErrorBoundary>
-    </>
+    <div style={{ minHeight: "100vh", backgroundColor: "#000000" }}>
+      <ClientOnly fallback={null}>
+        <PlayerRedirect />
+      </ClientOnly>
+    </div>
   );
 }
