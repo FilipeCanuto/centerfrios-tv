@@ -263,8 +263,13 @@
     if (cmd.action === "reload" || cmd.action === "purge") { window.location.reload(); return; }
     if (cmd.action === "sync") { lastSignature = ""; if (tv) loadPlaylist(tv.playlist_id, tv.event_mode); return; }
     if (cmd.action === "mute" || cmd.action === "unmute") {
+      /* Fire OS/Silk: aplica muted+volume em um único passo síncrono aqui.
+         applyLayout vai checar antes de reatribuir — evita dupla renegociação
+         do codec de áudio que travava o pipeline de vídeo no Fire TV Stick. */
       var m = cmd.action === "mute";
+      var vol = tv ? Math.min(1, Math.max(0, (typeof tv.volume === "number" ? tv.volume : 100) / 100)) : 1;
       vidA.muted = m; vidB.muted = m;
+      if (!m) { vidA.volume = vol; vidB.volume = vol; }
     }
   }
 
@@ -306,9 +311,11 @@
 
     var volume = typeof row.volume === "number" ? row.volume : 100;
     var muted = row.muted !== false;
-    vidA.muted = muted; vidB.muted = muted;
-    vidA.volume = Math.min(1, Math.max(0, volume / 100));
-    vidB.volume = vidA.volume;
+    var vol = Math.min(1, Math.max(0, volume / 100));
+    /* Só reatribui muted/volume se o valor mudou — evita segunda renegociação
+       do codec de áudio no Fire OS/Silk logo após runCommand já ter aplicado. */
+    if (vidA.muted !== muted) { vidA.muted = muted; vidB.muted = muted; }
+    if (Math.abs(vidA.volume - vol) > 0.001) { vidA.volume = vol; vidB.volume = vol; }
 
     showEl(presenceEl, !!row.show_presence_qr);
     if (row.show_presence_qr) {
