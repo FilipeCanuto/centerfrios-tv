@@ -69,6 +69,15 @@
   var alertHideAt = 0;
   var spotlight = null;
   var liveTimer = null;
+  /* estado do último layout aplicado — guards individuais evitam reflow desnecessário no Silk */
+  var lastLayout = {
+    orientation: null, fit: null,
+    tickerOn: null, tickerPos: null, tickerText: null,
+    zoneTop: null, zoneBottom: null,
+    cornerVisible: null, qrPos: null, logoSize: null,
+    sponsorsEnabled: null, sponsorsTickerTop: null, sponsorsTickerBottom: null,
+    showPresence: null, presencePos: null
+  };
 
   /* ---------------- utils ---------------- */
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -274,59 +283,118 @@
   }
 
   /* ---------------- layout / overlays estáticos ---------------- */
-  function applyLayout(row) {
-    var portrait = row.orientation === "portrait";
-    rot.className = portrait ? "portrait" : "";
+  /* Cada sub-função só escreve no DOM se o valor REALMENTE mudou.
+     Isso evita reflows desnecessários no pipeline do Silk/Fire OS que
+     causavam freeze de vídeo ao alternar qualquer campo de layout. */
 
-    var fit = row.media_fit === "cover" ? "cover" : "contain";
+  function applyOrientation(portrait) {
+    var cls = portrait ? "portrait" : "";
+    if (lastLayout.orientation === cls) return;
+    lastLayout.orientation = cls;
+    rot.className = cls;
+  }
+
+  function applyMediaFit(fit) {
+    if (lastLayout.fit === fit) return;
+    lastLayout.fit = fit;
     var mediaEls = [vidA, vidB, imgA, imgB, liveImg];
     for (var i = 0; i < mediaEls.length; i++) mediaEls[i].style.objectFit = fit;
+  }
 
-    var multizone = row.layout_mode === "multizone";
-    var tickerPos = row.ticker_position || "bottom";
+  function applyTicker(multizone, tickerPos, tickerTxt) {
     var tickerOn = multizone && tickerPos !== "hidden";
+    var zoneTop = tickerOn && tickerPos === "top" ? "90px" : "0px";
+    var zoneBottom = tickerOn && tickerPos !== "top" ? "90px" : "0px";
 
-    showEl(tickerEl, tickerOn);
+    if (lastLayout.tickerOn !== tickerOn) {
+      lastLayout.tickerOn = tickerOn;
+      showEl(tickerEl, tickerOn);
+    }
     if (tickerOn) {
-      tickerEl.style.top = tickerPos === "top" ? "0px" : "auto";
-      tickerEl.style.bottom = tickerPos === "top" ? "auto" : "0px";
-      tickerText.innerHTML = String(row.ticker_text || "CENTERFRIOS — Crescendo com você")
-        .replace(/</g, "&lt;");
+      if (lastLayout.tickerPos !== tickerPos) {
+        lastLayout.tickerPos = tickerPos;
+        tickerEl.style.top = tickerPos === "top" ? "0px" : "auto";
+        tickerEl.style.bottom = tickerPos === "top" ? "auto" : "0px";
+      }
+      if (lastLayout.tickerText !== tickerTxt) {
+        lastLayout.tickerText = tickerTxt;
+        tickerText.innerHTML = String(tickerTxt || "CENTERFRIOS — Crescendo com você").replace(/</g, "&lt;");
+      }
     }
-    zone.style.top = tickerOn && tickerPos === "top" ? "90px" : "0px";
-    zone.style.bottom = tickerOn && tickerPos !== "top" ? "90px" : "0px";
+    if (lastLayout.zoneTop !== zoneTop) { lastLayout.zoneTop = zoneTop; zone.style.top = zoneTop; }
+    if (lastLayout.zoneBottom !== zoneBottom) { lastLayout.zoneBottom = zoneBottom; zone.style.bottom = zoneBottom; }
+  }
 
-    showEl(cornerEl, multizone);
-    corner(cornerEl, row.qr_position || "top-right");
-    
+  function applyCorner(row, multizone) {
+    var qrPos = row.qr_position || "top-right";
     var logoSize = row.presence_logo_size || 96;
-    var logoImg = cornerEl.querySelector("img.logo");
-    if (logoImg) logoImg.style.height = Math.round(logoSize / 2) + "px";
-    if (cornerQr) {
-      cornerQr.style.height = logoSize + "px";
-      cornerQr.style.width = logoSize + "px";
-    }
-    
-    updateCornerQr();
 
+    if (lastLayout.cornerVisible !== multizone) {
+      lastLayout.cornerVisible = multizone;
+      showEl(cornerEl, multizone);
+    }
+    if (multizone) {
+      if (lastLayout.qrPos !== qrPos) {
+        lastLayout.qrPos = qrPos;
+        corner(cornerEl, qrPos);
+      }
+      if (lastLayout.logoSize !== logoSize) {
+        lastLayout.logoSize = logoSize;
+        var logoImg = cornerEl.querySelector("img.logo");
+        if (logoImg) logoImg.style.height = Math.round(logoSize / 2) + "px";
+        if (cornerQr) { cornerQr.style.height = logoSize + "px"; cornerQr.style.width = logoSize + "px"; }
+      }
+    }
+    updateCornerQr();
+  }
+
+  function applyAudio(row) {
     var volume = typeof row.volume === "number" ? row.volume : 100;
     var muted = row.muted !== false;
     var vol = Math.min(1, Math.max(0, volume / 100));
-    /* Só reatribui muted/volume se o valor mudou — evita segunda renegociação
-       do codec de áudio no Fire OS/Silk logo após runCommand já ter aplicado. */
+    /* Só reatribui se o valor mudou — evita renegociação do codec de áudio no Silk */
     if (vidA.muted !== muted) { vidA.muted = muted; vidB.muted = muted; }
     if (Math.abs(vidA.volume - vol) > 0.001) { vidA.volume = vol; vidB.volume = vol; }
+  }
 
-    showEl(presenceEl, !!row.show_presence_qr);
-    if (row.show_presence_qr) {
-      if (!presenceQr.src) presenceQr.src = qrSrc(window.location.origin + "/presenca", 200);
-      corner(presenceEl, row.presence_qr_position || "bottom-right");
+  function applyPresence(row) {
+    var show = !!row.show_presence_qr;
+    var pos = row.presence_qr_position || "bottom-right";
+    if (lastLayout.showPresence !== show) {
+      lastLayout.showPresence = show;
+      showEl(presenceEl, show);
     }
+    if (show) {
+      if (!presenceQr.src) presenceQr.src = qrSrc(window.location.origin + "/presenca", 200);
+      if (lastLayout.presencePos !== pos) { lastLayout.presencePos = pos; corner(presenceEl, pos); }
+    }
+  }
 
-    if (row.sponsors_enabled) loadSponsors(); else { showEl(sponsorsEl, false); }
-    sponsorsEl.style.top = tickerOn && tickerPos === "top" ? "auto" : "0px";
-    sponsorsEl.style.bottom = tickerOn && tickerPos === "top" ? "0px" : "auto";
+  function applySponsors(row, tickerOn, tickerPos) {
+    var enabled = !!row.sponsors_enabled;
+    var sTop = tickerOn && tickerPos === "top" ? "auto" : "0px";
+    var sBottom = tickerOn && tickerPos === "top" ? "0px" : "auto";
+    if (lastLayout.sponsorsEnabled !== enabled) {
+      lastLayout.sponsorsEnabled = enabled;
+      if (enabled) loadSponsors(); else showEl(sponsorsEl, false);
+    }
+    if (lastLayout.sponsorsTickerTop !== sTop) { lastLayout.sponsorsTickerTop = sTop; sponsorsEl.style.top = sTop; }
+    if (lastLayout.sponsorsTickerBottom !== sBottom) { lastLayout.sponsorsTickerBottom = sBottom; sponsorsEl.style.bottom = sBottom; }
+  }
 
+  function applyLayout(row) {
+    var portrait = row.orientation === "portrait";
+    var fit = row.media_fit === "cover" ? "cover" : "contain";
+    var multizone = row.layout_mode === "multizone";
+    var tickerPos = row.ticker_position || "bottom";
+
+    applyOrientation(portrait);
+    applyMediaFit(fit);
+    applyTicker(multizone, tickerPos, row.ticker_text);
+    applyCorner(row, multizone);
+    applyAudio(row);
+    applyPresence(row);
+    applySponsors(row, multizone && tickerPos !== "hidden", tickerPos);
     tickClock();
   }
 
