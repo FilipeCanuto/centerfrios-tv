@@ -17,7 +17,7 @@
   var TV_COLS = "id,name,is_paired,playlist_id,is_live_active,orientation,layout_mode,muted," +
     "ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit," +
     "sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until," +
-    "show_presence_qr,presence_qr_position";
+    "show_presence_qr,presence_qr_position,presence_logo_size";
 
   var POLL_MS = 5000;        // estado da TV
   var HEARTBEAT_MS = 45000;  // fire-and-forget, NUNCA lido de volta
@@ -237,7 +237,7 @@
       var sig = [row.orientation, row.layout_mode, row.media_fit, row.ticker_position, row.ticker_text,
         row.qr_position, row.qr_url, row.muted, row.volume, row.sponsors_enabled,
         row.show_presence_qr, row.presence_qr_position, row.welcome_message, row.welcome_until,
-        row.countdown_label, row.countdown_ends_at].join("|");
+        row.countdown_label, row.countdown_ends_at, row.presence_logo_size].join("|");
       if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); }
 
       setLive(!!row.is_live_active);
@@ -293,6 +293,15 @@
 
     showEl(cornerEl, multizone);
     corner(cornerEl, row.qr_position || "top-right");
+    
+    var logoSize = row.presence_logo_size || 96;
+    var logoImg = cornerEl.querySelector("img.logo");
+    if (logoImg) logoImg.style.height = Math.round(logoSize / 2) + "px";
+    if (cornerQr) {
+      cornerQr.style.height = logoSize + "px";
+      cornerQr.style.width = logoSize + "px";
+    }
+    
     updateCornerQr();
 
     var volume = typeof row.volume === "number" ? row.volume : 100;

@@ -453,6 +453,23 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   </div>
 
                   <div className="space-y-1.5">
+                    <Label className="text-xs">Tamanho do logo/QR (presença)</Label>
+                    <Select
+                      value={String((tv as any).presence_logo_size || 96)}
+                      onValueChange={(v) => patchTv(tv.id, { presence_logo_size: parseInt(v, 10) })}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="64">Pequeno (64px)</SelectItem>
+                        <SelectItem value="96">Médio (96px)</SelectItem>
+                        <SelectItem value="140">Grande (140px)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Enquadramento da mídia</Label>
                     <Select
                       value={tv.media_fit || "contain"}
