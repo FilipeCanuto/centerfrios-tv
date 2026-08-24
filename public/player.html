@@ -32,6 +32,9 @@
   #corner img.qr { height:88px; width:88px; margin-left:12px; vertical-align:middle; background:#fff; }
   #sponsors { position:absolute; left:0; right:0; height:84px; background:rgba(255,255,255,.94);
     display:none; overflow:hidden; white-space:nowrap; }
+  #sponsors span { display:inline-block; -webkit-animation:sponscroll 20s linear infinite; animation:sponscroll 20s linear infinite; }
+  @-webkit-keyframes sponscroll { 0%{-webkit-transform:translateX(0);} 100%{-webkit-transform:translateX(-50%);} }
+  @keyframes sponscroll { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }
   #sponsors img { height:56px; margin:14px 24px 0; vertical-align:middle; }
   #presence { position:absolute; display:none; background:rgba(10,57,129,.92); border-radius:18px;
     padding:14px; text-align:center; z-index:60; }

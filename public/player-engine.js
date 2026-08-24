@@ -394,10 +394,18 @@
       null, function (err, rows) {
         if (err || !rows || !rows.length) { showEl(sponsorsEl, false); return; }
         var html = "";
+        var count = 0;
         for (var i = 0; i < rows.length; i++) {
-          if (rows[i] && rows[i].image_url) html += '<img src="' + rows[i].image_url + '" alt="">';
+          if (rows[i] && rows[i].image_url) { html += '<img src="' + rows[i].image_url + '" alt="">'; count++; }
         }
+        
+        // Se houver poucos patrocinadores e não preencherem a tela, duplica mais vezes
+        // Mas a instrução diz "duplique o conteúdo". Vamos garantir que a velocidade seja constante.
         sponsorsList.innerHTML = html + html;
+        var duration = Math.max(10, count * 5) + "s";
+        sponsorsList.style.animationDuration = duration;
+        sponsorsList.style.webkitAnimationDuration = duration;
+        
         showEl(sponsorsEl, !!html);
       });
   }
