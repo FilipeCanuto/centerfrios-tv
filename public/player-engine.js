@@ -69,6 +69,8 @@
   var alertHideAt = 0;
   var spotlight = null;
   var liveTimer = null;
+  /* áudio desejado: aplicado no idleVideo só quando promovido a activeVideo (evita stall no Silk) */
+  var _pendingAudio = null; // { muted: bool, vol: float }
   /* estado do último layout aplicado — guards individuais evitam reflow desnecessário no Silk */
   var lastLayout = {
     orientation: null, fit: null,
@@ -352,9 +354,22 @@
     var volume = typeof row.volume === "number" ? row.volume : 100;
     var muted = row.muted !== false;
     var vol = Math.min(1, Math.max(0, volume / 100));
-    /* Só reatribui se o valor mudou — evita renegociação do codec de áudio no Silk */
-    if (vidA.muted !== muted) { vidA.muted = muted; vidB.muted = muted; }
-    if (Math.abs(vidA.volume - vol) > 0.001) { vidA.volume = vol; vidB.volume = vol; }
+
+    /* Guarda o valor desejado — aplicado no idleVideo quando ele for promovido em go() */
+    _pendingAudio = { muted: muted, vol: vol };
+
+    /* Aplica imediatamente só no activeVideo (já tem readyState >= 3, decoder estável) */
+    if (activeVideo.muted !== muted) activeVideo.muted = muted;
+    if (Math.abs(activeVideo.volume - vol) > 0.001) activeVideo.volume = vol;
+
+    /* idleVideo: só toca se NÃO estiver no meio de um preload (Silk: networkState LOADING + readyState < HAVE_FUTURE_DATA).
+       Atribuir muted=false sobre um decode pipeline não inicializado bloqueia o compositor
+       compartilhado por 1–3 s, causando o 'waiting' absorvido pelo watchdog de stall. */
+    var idleLoading = (idleVideo.networkState === 2 && idleVideo.readyState < 3);
+    if (!idleLoading) {
+      if (idleVideo.muted !== muted) idleVideo.muted = muted;
+      if (Math.abs(idleVideo.volume - vol) > 0.001) idleVideo.volume = vol;
+    }
   }
 
   function applyPresence(row) {
@@ -683,6 +698,12 @@
 
     function go() {
       if (my !== token) return;
+      /* Aplica áudio pendente ANTES do play — elemento já tem readyState >= 3,
+         decoder inicializado: não há renegociação de pipeline no Silk. */
+      if (_pendingAudio) {
+        if (el.muted !== _pendingAudio.muted) el.muted = _pendingAudio.muted;
+        if (Math.abs(el.volume - _pendingAudio.vol) > 0.001) el.volume = _pendingAudio.vol;
+      }
       try { el.currentTime = 0; } catch (e) {}
       var pr;
       try { pr = el.play(); } catch (e) { pr = null; }
