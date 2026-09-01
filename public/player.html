@@ -111,7 +111,13 @@
     <div id="diag"></div>
   </div>
 </div>
-<script>/* cache-bust: v=825803b — atualizar junto com player-engine.js */
-(function(){var s=document.createElement("script");s.src="/player-engine.js?v=825803b";document.head.appendChild(s);}());</script>
+<script>
+/* REGRA DE CACHE-BUSTING — OBRIGATÓRIA EM TODO COMMIT QUE TOQUE player-engine.js:
+   Atualizar o valor de ?v= abaixo para um timestamp AAAAMMDDHHmmss do MOMENTO DA EDIÇÃO.
+   NÃO usar hash de commit (dependência circular: hash só existe após o commit).
+   Exemplo de atualização: v=20260901001516 → v=20260902120000
+   Sem isso, browsers e TVs Fire OS servem a versão antiga em cache. */
+(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260901001516";document.head.appendChild(s);}());
+</script>
 </body>
 </html>
