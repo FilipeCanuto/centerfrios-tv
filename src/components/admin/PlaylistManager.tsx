@@ -284,7 +284,13 @@ export function PlaylistManager() {
                   className="flex items-center gap-2 rounded-xl border border-border p-2"
                 >
                   <span className="h-10 w-14 shrink-0 overflow-hidden rounded-lg bg-foreground/90">
-                    {m.type === "image" ? (
+                    {m.type === "youtube" ? (
+                      <img
+                        src={"https://i.ytimg.com/vi/" + (parseYoutubeId(m.url) || "") + "/mqdefault.jpg"}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : m.type === "image" ? (
                       <img src={m.url} alt="" className="h-full w-full object-contain" />
                     ) : (
                       <video src={m.url} muted className="h-full w-full object-contain" />
@@ -298,7 +304,9 @@ export function PlaylistManager() {
                       ) : (
                         <ImageIcon className="h-3 w-3" />
                       )}
-                      {m.resolution || (m.type === "video" ? "Vídeo" : "Imagem")}
+                      {m.type === "youtube"
+                        ? "YouTube"
+                        : m.resolution || (m.type === "video" ? "Vídeo" : "Imagem")}
                     </p>
                   </div>
                   <Button
@@ -475,7 +483,19 @@ function PlaylistPreview({
         </DialogHeader>
         <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
           {currentEntry && currentEntry.media ? (
-            currentEntry.media.type === "video" ? (
+            currentEntry.media.type === "youtube" ? (
+              <iframe
+                key={currentEntry.media.id + "-" + i}
+                src={
+                  "https://www.youtube.com/embed/" +
+                  (parseYoutubeId(currentEntry.media.url) || "") +
+                  "?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0"
+                }
+                title={currentEntry.media.title}
+                allow="autoplay; encrypted-media"
+                className="h-full w-full border-0"
+              />
+            ) : currentEntry.media.type === "video" ? (
               <video
                 key={currentEntry.media.id + "-" + i}
                 src={currentEntry.media.url}
