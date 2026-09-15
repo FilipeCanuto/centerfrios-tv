@@ -28,7 +28,18 @@ import {
   XCircle,
   RotateCcw,
   QrCode,
+  Youtube,
 } from "lucide-react";
+
+/* Aceita watch?v=, youtu.be/, shorts/, embed/ ou o próprio ID de 11 caracteres */
+export function parseYoutubeId(value: string): string {
+  const v = (value || "").trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+  const m = v.match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+  );
+  return m ? m[1] : "";
+}
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
@@ -81,6 +92,36 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
   const [pendingDelete, setPendingDelete] = useState<MediaRow | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const runningRef = useRef(false);
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytSaving, setYtSaving] = useState(false);
+  const ytId = parseYoutubeId(ytUrl);
+
+  async function addYoutube() {
+    const id = parseYoutubeId(ytUrl);
+    if (!id) {
+      toast.error("Link do YouTube inválido");
+      return;
+    }
+    setYtSaving(true);
+    const { error } = await supabase.from("media").insert({
+      title: ytTitle.trim() || "Vídeo do YouTube",
+      url: "https://www.youtube.com/watch?v=" + id,
+      type: "youtube",
+      duration: 0,
+      resolution: null,
+    });
+    setYtSaving(false);
+    if (error) {
+      toast.error("Não foi possível adicionar o vídeo");
+      return;
+    }
+    toast.success("Vídeo do YouTube adicionado");
+    setYtUrl("");
+    setYtTitle("");
+    load();
+    if (onChanged) onChanged();
+  }
 
   async function saveQr(m: MediaRow, value: string) {
     const next = value.trim() || null;
@@ -366,6 +407,70 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
         ) : null}
       </section>
 
+      <section className="cf-card p-5">
+        <div className="flex items-center gap-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+            <Youtube className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-extrabold">Adicionar vídeo do YouTube</h3>
+            <p className="text-xs text-muted-foreground">
+              Cole o link (youtube.com/watch, youtu.be ou shorts) — o vídeo entra na playlist como mídia.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor="yt-url">Link do YouTube</Label>
+            <Input
+              id="yt-url"
+              value={ytUrl}
+              onChange={(e) => setYtUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="h-11 rounded-xl"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="yt-title">Nome da mídia</Label>
+            <Input
+              id="yt-title"
+              value={ytTitle}
+              onChange={(e) => setYtTitle(e.target.value)}
+              placeholder="Ex.: Campanha de verão"
+              className="h-11 rounded-xl"
+            />
+          </div>
+          <Button
+            className="h-11 rounded-xl px-6 font-bold"
+            disabled={!ytId || ytSaving}
+            onClick={addYoutube}
+          >
+            Adicionar
+          </Button>
+        </div>
+
+        {ytUrl.trim() && !ytId ? (
+          <p className="mt-2 text-xs font-semibold text-destructive">
+            Link inválido — use watch?v=, youtu.be/ ou shorts/.
+          </p>
+        ) : null}
+
+        {ytId ? (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-secondary/40 p-2">
+            <img
+              src={"https://i.ytimg.com/vi/" + ytId + "/mqdefault.jpg"}
+              alt="Prévia do vídeo do YouTube"
+              className="h-16 w-28 rounded-lg object-cover"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{ytTitle.trim() || "Vídeo do YouTube"}</p>
+              <p className="truncate text-[11px] text-muted-foreground">ID {ytId}</p>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="cf-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -403,18 +508,26 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
         {visible.map((m) => (
           <article key={m.id} className="cf-card group overflow-hidden p-0">
             <div className="relative flex aspect-video items-center justify-center bg-foreground/90">
-              {m.type === "image" ? (
+              {m.type === "youtube" ? (
+                <img
+                  src={"https://i.ytimg.com/vi/" + (parseYoutubeId(m.url) || "") + "/mqdefault.jpg"}
+                  alt={m.title}
+                  className="h-full w-full object-contain"
+                />
+              ) : m.type === "image" ? (
                 <img src={m.url} alt={m.title} className="h-full w-full object-contain" />
               ) : (
                 <video src={m.url} muted className="h-full w-full object-contain" />
               )}
               <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
-                {m.type === "video" ? (
+                {m.type === "youtube" ? (
+                  <Youtube className="h-3 w-3" />
+                ) : m.type === "video" ? (
                   <Film className="h-3 w-3" />
                 ) : (
                   <ImageIcon className="h-3 w-3" />
                 )}
-                {m.type === "video" ? "Vídeo" : "Imagem"}
+                {m.type === "youtube" ? "YouTube" : m.type === "video" ? "Vídeo" : "Imagem"}
               </span>
               <Button
                 size="icon"
