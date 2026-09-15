@@ -18,6 +18,8 @@
   .media { position:absolute; top:0; left:0; width:100%; height:100%; background:#000;
     object-fit:contain; opacity:0; -webkit-transition:opacity .4s linear; transition:opacity .4s linear; }
   .media.on { opacity:1; }
+  #yt-a, #yt-b { pointer-events:none; }
+  #yt-a iframe, #yt-b iframe, #yt-a > div, #yt-b > div { width:100%; height:100%; border:0; display:block; }
   #live-img { position:absolute; top:0; left:0; width:100%; height:100%; background:#000;
     object-fit:contain; display:none; }
   #ticker { position:absolute; left:0; right:0; height:90px; background:#0A3981; color:#fff;
@@ -76,6 +78,8 @@
       <video id="media-b" class="media" muted playsinline webkit-playsinline preload="auto"></video>
       <img id="img-a" class="media" alt="">
       <img id="img-b" class="media" alt="">
+      <div id="yt-a" class="media"><div id="yt-a-inner"></div></div>
+      <div id="yt-b" class="media"><div id="yt-b-inner"></div></div>
       <img id="live-img" alt="">
     </div>
 
@@ -117,7 +121,7 @@
    NÃO usar hash de commit (dependência circular: hash só existe após o commit).
    Exemplo de atualização: v=20260901001516 → v=20260902120000
    Sem isso, browsers e TVs Fire OS servem a versão antiga em cache. */
-(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260915030900";document.head.appendChild(s);}());
+(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260915032500";document.head.appendChild(s);}());
 </script>
 </body>
 </html>
