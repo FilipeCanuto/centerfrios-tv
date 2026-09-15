@@ -62,6 +62,11 @@
   var activeVideo = vidA, idleVideo = vidB;
   var activeImg = imgA, idleImg = imgB;
   var preloadedVideoSrc = "";
+  /* ---- YouTube (pipeline isolado do decoder nativo) ---- */
+  var ytApiReady = false, ytApiLoading = false, ytQueue = [];
+  var ytA = { el: $("yt-a"), holder: "yt-a-inner", player: null, videoId: "", ready: false, h: null };
+  var ytB = { el: $("yt-b"), holder: "yt-b-inner", player: null, videoId: "", ready: false, h: null };
+  var activeYt = ytA, idleYt = ytB;
   var timers = { item: null, stall: null, hard: null, canplay: null };
   var lastSignature = "";
   var lastTvSig = "";
@@ -250,7 +255,7 @@
         row.qr_position, row.qr_url, row.muted, row.volume, row.sponsors_enabled,
         row.show_presence_qr, row.presence_qr_position, row.welcome_message, row.welcome_until,
         row.countdown_label, row.countdown_ends_at, row.presence_logo_size].join("|");
-      if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); }
+      if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); ytApplyAudio(activeYt); }
 
       setLive(!!row.is_live_active);
       if (isLive) return;
@@ -285,6 +290,8 @@
         vidA.muted = m; vidB.muted = m;
         if (!m) { vidA.volume = vol; vidB.volume = vol; _audioUnlocked = true; }
       }
+      /* YouTube: API própria, sem guarda de readyState (pipeline isolado) */
+      ytSetAudio(activeYt, m, Math.round(vol * 100));
     }
   }
 
@@ -650,6 +657,7 @@
     token++;
     clearAllTimers();
     releaseVideo(vidA); releaseVideo(vidB);
+    ytDestroy(ytA); ytDestroy(ytB);
     imgA.className = "media"; imgB.className = "media";
   }
 
@@ -686,7 +694,8 @@
 
     updateCornerQr();
 
-    if (item.type === "video") renderVideo(item, my);
+    if (item.type === "youtube" || (item.type !== "image" && ytId(item.url))) renderYoutube(item, my);
+    else if (item.type === "video") renderVideo(item, my);
     else renderImage(item, my);
   }
 
@@ -698,12 +707,14 @@
     nextEl.className = "media on";
     for (var i = 0; i < prevEls.length; i++) {
       (function (el) {
-        if (el === nextEl) return;
+        if (!el || el === nextEl) return;
         el.className = "media";
         setTimeout(function () {
           if (el === nextEl) return;
           if (el.tagName === "VIDEO") releaseVideo(el);        // libera o decoder (RAM no Silk)
-          else el.removeAttribute("src");
+          else if (el === ytA.el || el === ytB.el) {           // libera o webview do YouTube
+            ytDestroy(el === ytA.el ? ytA : ytB);
+          } else el.removeAttribute("src");
         }, FADE_MS + 100);
       })(prevEls[i]);
     }
@@ -732,7 +743,7 @@
           try { el.play(); } catch (e2) {}
         });
       }
-      crossfade(el, [other, activeImg, idleImg]);
+      crossfade(el, [other, activeImg, idleImg, activeYt.el]);
       activeVideo = el; idleVideo = other;
       preloadNext();
     }
@@ -784,7 +795,7 @@
     function go() {
       if (my !== token) return;
       el.src = item.url;
-      crossfade(el, [other, activeVideo, idleVideo]);
+      crossfade(el, [other, activeVideo, idleVideo, activeYt.el]);
       activeImg = el; idleImg = other;
       timers.item = setTimeout(function () { if (my === token) advance(); }, secs * 1000);
       preloadNext();
@@ -801,6 +812,16 @@
     if (items.length < 2) return;
     var next = items[(idx + 1) % items.length];
     if (!next || !next.url) return;
+    var nextYt = (next.type === "youtube" || (next.type !== "image" && ytId(next.url))) ? ytId(next.url) : "";
+    if (nextYt) {
+      /* mesmo princípio do double buffer de MP4: cueVideoById no slot oculto, sem play */
+      whenYtReady(function () {
+        if (idleYt.player && idleYt.videoId === nextYt) return;
+        idleYt.h = null;
+        ytCreate(idleYt, nextYt, false);
+      });
+      return;
+    }
     if (next.type === "video") {
       try {
         if (idleVideo.getAttribute("src") !== next.url) {
@@ -814,6 +835,143 @@
       var p = new Image();
       p.src = next.url;
     }
+  }
+
+  /* ---------------- YouTube: double buffer de iframes ---------------- */
+  /* NOTA: controls=0&modestbranding=1&rel=0 apenas limpa a interface do embed.
+     Isso NÃO remove anúncios — a exibição de anúncios é definida pelo dono do
+     vídeo/monetização do canal, não pelo player nem pelos parâmetros do embed. */
+
+  function ytId(u) {
+    if (!u) return "";
+    u = String(u);
+    if (/^[A-Za-z0-9_-]{11}$/.test(u)) return u;
+    var m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : "";
+  }
+
+  function loadYtApi() {
+    if (ytApiReady || ytApiLoading) return;
+    ytApiLoading = true;
+    var s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(s);
+  }
+
+  /* callback global exigido pela API oficial do YouTube */
+  window.onYouTubeIframeAPIReady = function () {
+    ytApiReady = true; ytApiLoading = false;
+    var q = ytQueue; ytQueue = [];
+    for (var i = 0; i < q.length; i++) { try { q[i](); } catch (e) {} }
+  };
+
+  function whenYtReady(fn) {
+    if (ytApiReady && window.YT && window.YT.Player) { fn(); return; }
+    ytQueue.push(fn);
+    loadYtApi();
+  }
+
+  function ytDestroy(slot) {
+    if (!slot || !slot.el) return;
+    if (slot.player) { try { slot.player.destroy(); } catch (e) {} }
+    slot.player = null; slot.videoId = ""; slot.ready = false; slot.h = null;
+    slot.el.className = "media";
+    slot.el.innerHTML = '<div id="' + slot.holder + '"></div>';
+  }
+
+  function ytCreate(slot, videoId, autoplay) {
+    ytDestroy(slot);
+    slot.videoId = videoId;
+    try {
+      slot.player = new window.YT.Player(slot.holder, {
+        videoId: videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: autoplay ? 1 : 0, controls: 0, modestbranding: 1, rel: 0,
+          playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3
+        },
+        events: {
+          onReady: function () {
+            slot.ready = true;
+            ytApplyAudio(slot);
+            if (slot.h && slot.h.onReady) slot.h.onReady();
+          },
+          onStateChange: function (e) { if (slot.h && slot.h.onStateChange) slot.h.onStateChange(e); },
+          onError: function (e) { if (slot.h && slot.h.onError) slot.h.onError(e); }
+        }
+      });
+    } catch (e) { slot.player = null; }
+  }
+
+  function ytSetAudio(slot, muted, volume) {
+    if (!slot || !slot.player || !slot.ready) return;
+    try {
+      slot.player.setVolume(Math.round(Math.min(100, Math.max(0, volume))));
+      if (muted) slot.player.mute(); else slot.player.unMute();
+    } catch (e) {}
+  }
+
+  /* mesma fonte de verdade do vídeo nativo: tv.muted / tv.volume */
+  function ytApplyAudio(slot) {
+    var volume = (tv && typeof tv.volume === "number") ? tv.volume : 100;
+    var muted = !tv || tv.muted !== false;
+    ytSetAudio(slot, muted, volume);
+  }
+
+  function renderYoutube(item, my) {
+    var vid = ytId(item.url);
+    if (!vid) { scheduleFail(); return; }
+    var slot = idleYt, other = activeYt;
+    var started = false;
+
+    function go() {
+      if (my !== token || started || !slot.player) return;
+      started = true;
+      clearTimer("canplay");
+      try { slot.player.playVideo(); } catch (e) {}
+      ytApplyAudio(slot);
+      crossfade(slot.el, [other.el, activeVideo, idleVideo, activeImg, idleImg]);
+      activeYt = slot; idleYt = other;
+      preloadNext();
+    }
+
+    slot.h = {
+      onReady: go,
+      onStateChange: function (e) {
+        if (my !== token) return;
+        var st = window.YT && window.YT.PlayerState;
+        if (!st) return;
+        if (e.data === st.PLAYING) {
+          clearTimer("hard");
+          var d = 0;
+          try { d = slot.player.getDuration(); } catch (x) {}
+          var secs = (d && isFinite(d) && d > 0) ? d + 8 : 900;   // watchdog dinâmico
+          timers.hard = setTimeout(function () { if (my === token) advance(); }, secs * 1000);
+        } else if (e.data === st.ENDED) {
+          if (my === token) advance();
+        }
+      },
+      onError: function () {
+        if (my !== token) return;
+        diag("youtube indisponivel");     // privado/removido/bloqueado: pula sem travar
+        advance();
+      }
+    };
+
+    whenYtReady(function () {
+      if (my !== token) return;
+      if (slot.player && slot.videoId === vid) {
+        if (slot.ready) go();             // já pré-carregado (cue): entra sem esperar rede
+        return;
+      }
+      ytCreate(slot, vid, true);
+    });
+
+    timers.canplay = setTimeout(function () {                     // segurança
+      if (my !== token || started) return;
+      if (slot.player && slot.ready) go(); else advance();
+    }, 10000);
   }
 
   /* ---------------- go ---------------- */
