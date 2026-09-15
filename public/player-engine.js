@@ -355,8 +355,18 @@
     var muted = row.muted !== false;
     var vol = Math.min(1, Math.max(0, volume / 100));
 
+    /* Depois do primeiro desbloqueio de áudio NUNCA mais escrevemos .muted:
+       só o .volume controla ligar/desligar o som (0 = silenciado). */
+    if (_audioUnlocked) {
+      var v = muted ? 0 : vol;
+      _pendingAudio = { muted: false, vol: v, volumeOnly: true };
+      if (Math.abs(activeVideo.volume - v) > 0.001) activeVideo.volume = v;
+      if (Math.abs(idleVideo.volume - v) > 0.001) idleVideo.volume = v;
+      return;
+    }
+
     /* Guarda o valor desejado — aplicado no idleVideo quando ele for promovido em go() */
-    _pendingAudio = { muted: muted, vol: vol };
+    _pendingAudio = { muted: muted, vol: vol, volumeOnly: false };
 
     /* Aplica imediatamente só no activeVideo (já tem readyState >= 3, decoder estável) */
     if (activeVideo.muted !== muted) activeVideo.muted = muted;
@@ -370,7 +380,10 @@
       if (idleVideo.muted !== muted) idleVideo.muted = muted;
       if (Math.abs(idleVideo.volume - vol) > 0.001) idleVideo.volume = vol;
     }
+
+    if (!muted) _audioUnlocked = true;   // a partir daqui, só volume
   }
+
 
   function applyPresence(row) {
     var show = !!row.show_presence_qr;
