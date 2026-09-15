@@ -70,7 +70,8 @@
   var spotlight = null;
   var liveTimer = null;
   /* áudio desejado: aplicado no idleVideo só quando promovido a activeVideo (evita stall no Silk) */
-  var _pendingAudio = null; // { muted: bool, vol: float }
+  var _pendingAudio = null; // { muted: bool, vol: float, volumeOnly: bool }
+  var _audioUnlocked = false; // true após o 1º unmute bem-sucedido: nunca mais escrever .muted
   /* estado do último layout aplicado — guards individuais evitam reflow desnecessário no Silk */
   var lastLayout = {
     orientation: null, fit: null,
