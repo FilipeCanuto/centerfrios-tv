@@ -70,7 +70,8 @@
   var spotlight = null;
   var liveTimer = null;
   /* áudio desejado: aplicado no idleVideo só quando promovido a activeVideo (evita stall no Silk) */
-  var _pendingAudio = null; // { muted: bool, vol: float }
+  var _pendingAudio = null; // { muted: bool, vol: float, volumeOnly: bool }
+  var _audioUnlocked = false; // true após o 1º unmute bem-sucedido: nunca mais escrever .muted
   /* estado do último layout aplicado — guards individuais evitam reflow desnecessário no Silk */
   var lastLayout = {
     orientation: null, fit: null,
@@ -274,13 +275,16 @@
     if (cmd.action === "reload" || cmd.action === "purge") { window.location.reload(); return; }
     if (cmd.action === "sync") { lastSignature = ""; if (tv) loadPlaylist(tv.playlist_id, tv.event_mode); return; }
     if (cmd.action === "mute" || cmd.action === "unmute") {
-      /* Fire OS/Silk: aplica muted+volume em um único passo síncrono aqui.
-         applyLayout vai checar antes de reatribuir — evita dupla renegociação
-         do codec de áudio que travava o pipeline de vídeo no Fire TV Stick. */
+      /* Fire OS/Silk: 1ª ativação usa muted; depois disso só .volume. */
       var m = cmd.action === "mute";
       var vol = tv ? Math.min(1, Math.max(0, (typeof tv.volume === "number" ? tv.volume : 100) / 100)) : 1;
-      vidA.muted = m; vidB.muted = m;
-      if (!m) { vidA.volume = vol; vidB.volume = vol; }
+      if (_audioUnlocked) {
+        var v = m ? 0 : vol;
+        vidA.volume = v; vidB.volume = v;
+      } else {
+        vidA.muted = m; vidB.muted = m;
+        if (!m) { vidA.volume = vol; vidB.volume = vol; _audioUnlocked = true; }
+      }
     }
   }
 
@@ -355,8 +359,18 @@
     var muted = row.muted !== false;
     var vol = Math.min(1, Math.max(0, volume / 100));
 
+    /* Depois do primeiro desbloqueio de áudio NUNCA mais escrevemos .muted:
+       só o .volume controla ligar/desligar o som (0 = silenciado). */
+    if (_audioUnlocked) {
+      var v = muted ? 0 : vol;
+      _pendingAudio = { muted: false, vol: v, volumeOnly: true };
+      if (Math.abs(activeVideo.volume - v) > 0.001) activeVideo.volume = v;
+      if (Math.abs(idleVideo.volume - v) > 0.001) idleVideo.volume = v;
+      return;
+    }
+
     /* Guarda o valor desejado — aplicado no idleVideo quando ele for promovido em go() */
-    _pendingAudio = { muted: muted, vol: vol };
+    _pendingAudio = { muted: muted, vol: vol, volumeOnly: false };
 
     /* Aplica imediatamente só no activeVideo (já tem readyState >= 3, decoder estável) */
     if (activeVideo.muted !== muted) activeVideo.muted = muted;
@@ -370,7 +384,10 @@
       if (idleVideo.muted !== muted) idleVideo.muted = muted;
       if (Math.abs(idleVideo.volume - vol) > 0.001) idleVideo.volume = vol;
     }
+
+    if (!muted) _audioUnlocked = true;   // a partir daqui, só volume
   }
+
 
   function applyPresence(row) {
     var show = !!row.show_presence_qr;
@@ -699,16 +716,21 @@
     function go() {
       if (my !== token) return;
       /* Aplica áudio pendente ANTES do play — elemento já tem readyState >= 3,
-         decoder inicializado: não há renegociação de pipeline no Silk. */
+         decoder inicializado: não há renegociação de pipeline no Silk.
+         Após o 1º desbloqueio, só mexemos em .volume. */
       if (_pendingAudio) {
-        if (el.muted !== _pendingAudio.muted) el.muted = _pendingAudio.muted;
+        if (!_audioUnlocked && el.muted !== _pendingAudio.muted) el.muted = _pendingAudio.muted;
         if (Math.abs(el.volume - _pendingAudio.vol) > 0.001) el.volume = _pendingAudio.vol;
       }
       try { el.currentTime = 0; } catch (e) {}
       var pr;
       try { pr = el.play(); } catch (e) { pr = null; }
       if (pr && typeof pr["catch"] === "function") {
-        pr["catch"](function () { el.muted = true; try { el.play(); } catch (e2) {} });
+        pr["catch"](function () {
+          if (!_audioUnlocked) { el.muted = true; }
+          else { el.volume = 0; }
+          try { el.play(); } catch (e2) {}
+        });
       }
       crossfade(el, [other, activeImg, idleImg]);
       activeVideo = el; idleVideo = other;
