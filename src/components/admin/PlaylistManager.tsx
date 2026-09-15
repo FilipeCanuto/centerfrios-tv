@@ -6,6 +6,7 @@ import {
   type MediaRow,
   type PlaylistItem,
 } from "@/lib/centerfrios";
+import { parseYoutubeId } from "@/components/admin/MediaManager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
