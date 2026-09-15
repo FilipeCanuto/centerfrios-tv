@@ -713,16 +713,21 @@
     function go() {
       if (my !== token) return;
       /* Aplica áudio pendente ANTES do play — elemento já tem readyState >= 3,
-         decoder inicializado: não há renegociação de pipeline no Silk. */
+         decoder inicializado: não há renegociação de pipeline no Silk.
+         Após o 1º desbloqueio, só mexemos em .volume. */
       if (_pendingAudio) {
-        if (el.muted !== _pendingAudio.muted) el.muted = _pendingAudio.muted;
+        if (!_audioUnlocked && el.muted !== _pendingAudio.muted) el.muted = _pendingAudio.muted;
         if (Math.abs(el.volume - _pendingAudio.vol) > 0.001) el.volume = _pendingAudio.vol;
       }
       try { el.currentTime = 0; } catch (e) {}
       var pr;
       try { pr = el.play(); } catch (e) { pr = null; }
       if (pr && typeof pr["catch"] === "function") {
-        pr["catch"](function () { el.muted = true; try { el.play(); } catch (e2) {} });
+        pr["catch"](function () {
+          if (!_audioUnlocked) { el.muted = true; }
+          else { el.volume = 0; }
+          try { el.play(); } catch (e2) {}
+        });
       }
       crossfade(el, [other, activeImg, idleImg]);
       activeVideo = el; idleVideo = other;
