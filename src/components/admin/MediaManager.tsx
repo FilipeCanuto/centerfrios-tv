@@ -113,20 +113,37 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
     if (!playlistId) return;
     setYtImporting(true);
     try {
-      const { data, error } = await supabase.functions.invoke<{
-        items?: { videoId: string; title: string }[];
-        error?: string;
-      }>("youtube-playlist", { body: { playlistId } });
-
-      if (error || !data || data.error) {
-        toast.error(
-          data?.error ||
-            "Não foi possível importar a playlist — verifique se a YOUTUBE_API_KEY está configurada",
+      type PlaylistApiItem = {
+        snippet?: { title?: string; resourceId?: { videoId?: string } };
+      };
+      let data: { items?: PlaylistApiItem[]; error?: string } | null = null;
+      try {
+        const res = await fetch(
+          "/api/public/youtube-playlist?playlistId=" + encodeURIComponent(playlistId),
         );
+        data = await res.json();
+      } catch {
+        toast.error("Falha de rede ao consultar a playlist");
         return;
       }
 
-      const items = data.items || [];
+      if (!data || data.error) {
+        toast.error(data?.error || "Não foi possível importar a playlist");
+        return;
+      }
+
+      const rawItems = data.items || [];
+      const items = rawItems
+        .map((it) => ({
+          videoId: it.snippet?.resourceId?.videoId || "",
+          title: it.snippet?.title || "",
+        }))
+        // pula vídeos privados/removidos da playlist
+        .filter(
+          (it) =>
+            it.videoId && it.title && it.title !== "Private video" && it.title !== "Deleted video",
+        );
+
       if (!items.length) {
         toast.error("Playlist vazia ou privada");
         return;
