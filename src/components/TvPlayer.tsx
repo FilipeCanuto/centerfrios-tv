@@ -1721,11 +1721,14 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
     let stop = false;
     async function load() {
       try {
-        const res = await fetch("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL");
+        // Frankfurter (BCE, sem chave, sem limite de uso perceptível) em vez da
+        // AwesomeAPI. Pede BRL->USD/EUR e inverte (1/taxa) pra exibir quantos
+        // BRL valem 1 USD / 1 EUR.
+        const res = await fetch("https://api.frankfurter.app/latest?from=BRL&to=USD,EUR");
         const data = await res.json();
         if (stop) return;
-        const u = parseFloat(data?.USDBRL?.bid);
-        const e = parseFloat(data?.EURBRL?.bid);
+        const u = data?.rates?.USD ? 1 / data.rates.USD : NaN;
+        const e = data?.rates?.EUR ? 1 / data.rates.EUR : NaN;
         setUsd(isFinite(u) ? u : null);
         setEur(isFinite(e) ? e : null);
       } catch {

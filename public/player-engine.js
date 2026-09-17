@@ -485,10 +485,14 @@
 
   function loadCurrency() {
     if (!tv || !tv.show_currency) return;
-    httpGetJson("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL", function (err, data) {
-      if (err || !data) return; // mantém o último valor exibido
-      var usd = data.USDBRL && parseFloat(data.USDBRL.bid);
-      var eur = data.EURBRL && parseFloat(data.EURBRL.bid);
+    // Frankfurter (BCE, sem chave, sem limite de uso perceptível) em vez da
+    // AwesomeAPI -- essa vinha batendo "limite de uso atingido" para o IP
+    // compartilhado da Lovable. Pede BRL->USD/EUR e inverte (1/taxa) pra
+    // exibir quantos BRL valem 1 USD / 1 EUR, que é o que faz sentido aqui.
+    httpGetJson("https://api.frankfurter.app/latest?from=BRL&to=USD,EUR", function (err, data) {
+      if (err || !data || !data.rates) return; // mantém o último valor exibido
+      var usd = data.rates.USD ? 1 / data.rates.USD : 0;
+      var eur = data.rates.EUR ? 1 / data.rates.EUR : 0;
       var html = "";
       if (usd && isFinite(usd)) html += "<span>US$ " + usd.toFixed(2) + "</span>";
       if (eur && isFinite(eur)) html += "<span>&euro; " + eur.toFixed(2) + "</span>";
