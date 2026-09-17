@@ -173,6 +173,23 @@ export function isOnline(lastPing: string | null): boolean {
   return Date.now() - new Date(lastPing).getTime() < 90000;
 }
 
+const YOUTUBE_ID_RE =
+  /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+
+export function extractYoutubeId(url: string): string | null {
+  if (!url) return null;
+  const m = url.match(YOUTUBE_ID_RE);
+  return m ? m[1] : null;
+}
+
+export function youtubeThumbnail(id: string): string {
+  return "https://img.youtube.com/vi/" + id + "/hqdefault.jpg";
+}
+
+export function youtubeWatchUrl(id: string): string {
+  return "https://www.youtube.com/watch?v=" + id;
+}
+
 export function formatBytes(bytes: number | null): string {
   if (!bytes) return "—";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
