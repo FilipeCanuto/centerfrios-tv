@@ -277,7 +277,9 @@ export type Database = {
           qr_position: string
           qr_url: string | null
           screen_resolution: string | null
+          show_currency: boolean
           show_presence_qr: boolean
+          show_weather: boolean
           sponsors_enabled: boolean
           ticker_position: string
           ticker_text: string | null
@@ -310,7 +312,9 @@ export type Database = {
           qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          show_currency?: boolean
           show_presence_qr?: boolean
+          show_weather?: boolean
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
@@ -343,7 +347,9 @@ export type Database = {
           qr_position?: string
           qr_url?: string | null
           screen_resolution?: string | null
+          show_currency?: boolean
           show_presence_qr?: boolean
+          show_weather?: boolean
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
