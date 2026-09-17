@@ -510,26 +510,28 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 />
               </div>
 
+              {/* Previsão do tempo / cotação: temporariamente desativados no admin.
+                  As colunas show_weather/show_currency ainda não existem no banco
+                  de produção (migration pendente) — habilitar de novo assim que
+                  confirmado, senão a gravação falha com "Falha ao aplicar a alteração". */}
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                <div
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 opacity-50"
+                  title="Em breve — aguardando atualização do banco de dados"
+                >
                   <Label htmlFor={"weather-" + tv.id} className="text-xs font-bold">
                     Previsão do tempo
                   </Label>
-                  <Switch
-                    id={"weather-" + tv.id}
-                    checked={!!tv.show_weather}
-                    onCheckedChange={(v) => patchTv(tv.id, { show_weather: v })}
-                  />
+                  <Switch id={"weather-" + tv.id} checked={false} disabled />
                 </div>
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                <div
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 opacity-50"
+                  title="Em breve — aguardando atualização do banco de dados"
+                >
                   <Label htmlFor={"currency-" + tv.id} className="text-xs font-bold">
                     Cotação Dólar/Euro
                   </Label>
-                  <Switch
-                    id={"currency-" + tv.id}
-                    checked={!!tv.show_currency}
-                    onCheckedChange={(v) => patchTv(tv.id, { show_currency: v })}
-                  />
+                  <Switch id={"currency-" + tv.id} checked={false} disabled />
                 </div>
               </div>
 
