@@ -28,7 +28,27 @@ import {
   XCircle,
   RotateCcw,
   QrCode,
+  Youtube,
+  ListVideo,
 } from "lucide-react";
+
+/* Aceita watch?v=, youtu.be/, shorts/, embed/ ou o próprio ID de 11 caracteres */
+export function parseYoutubeId(value: string): string {
+  const v = (value || "").trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+  const m = v.match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+  );
+  return m ? m[1] : "";
+}
+
+/* Playlist: youtube.com/playlist?list=... ou watch?v=...&list=... (ignora a lista "Watch Later" -> WL) */
+export function parseYoutubePlaylistId(value: string): string {
+  const v = (value || "").trim();
+  const m = v.match(/[?&]list=([A-Za-z0-9_-]+)/);
+  if (!m) return "";
+  return m[1] === "WL" ? "" : m[1];
+}
 
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
@@ -81,6 +101,118 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
   const [pendingDelete, setPendingDelete] = useState<MediaRow | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const runningRef = useRef(false);
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytSaving, setYtSaving] = useState(false);
+  const [ytImporting, setYtImporting] = useState(false);
+  const ytId = parseYoutubeId(ytUrl);
+  const ytPlaylistId = parseYoutubePlaylistId(ytUrl);
+
+  async function importYoutubePlaylist() {
+    const playlistId = ytPlaylistId;
+    if (!playlistId) return;
+    setYtImporting(true);
+    try {
+      type PlaylistApiItem = {
+        snippet?: { title?: string; resourceId?: { videoId?: string } };
+      };
+      let data: { items?: PlaylistApiItem[]; error?: string } | null = null;
+      try {
+        const res = await fetch(
+          "/api/public/youtube-playlist?playlistId=" + encodeURIComponent(playlistId),
+        );
+        data = await res.json();
+      } catch {
+        toast.error("Falha de rede ao consultar a playlist");
+        return;
+      }
+
+      if (!data || data.error) {
+        toast.error(data?.error || "Não foi possível importar a playlist");
+        return;
+      }
+
+      const rawItems = data.items || [];
+      const items = rawItems
+        .map((it) => ({
+          videoId: it.snippet?.resourceId?.videoId || "",
+          title: it.snippet?.title || "",
+        }))
+        // pula vídeos privados/removidos da playlist
+        .filter(
+          (it) =>
+            it.videoId && it.title && it.title !== "Private video" && it.title !== "Deleted video",
+        );
+
+      if (!items.length) {
+        toast.error("Playlist vazia ou privada");
+        return;
+      }
+
+      const existingUrls = new Set(media.map((m) => m.url));
+      const rows = items
+        .map((it) => ({
+          title: it.title,
+          url: "https://www.youtube.com/watch?v=" + it.videoId,
+          type: "youtube",
+          duration: 0,
+          resolution: null as string | null,
+        }))
+        .filter((row) => !existingUrls.has(row.url));
+
+      if (!rows.length) {
+        toast.success("Todos os vídeos dessa playlist já estavam na galeria");
+        setYtUrl("");
+        return;
+      }
+
+      const { error: insertError } = await supabase.from("media").insert(rows);
+      if (insertError) {
+        toast.error("Falha ao salvar os vídeos importados");
+        return;
+      }
+
+      const skipped = items.length - rows.length;
+      toast.success(
+        "Playlist importada: " +
+          rows.length +
+          " vídeo" +
+          (rows.length === 1 ? "" : "s") +
+          (skipped ? " (" + skipped + " já existia" + (skipped === 1 ? "" : "m") + " na galeria)" : ""),
+      );
+      setYtUrl("");
+      load();
+      if (onChanged) onChanged();
+    } finally {
+      setYtImporting(false);
+    }
+  }
+
+  async function addYoutube() {
+    const id = parseYoutubeId(ytUrl);
+    if (!id) {
+      toast.error("Link do YouTube inválido");
+      return;
+    }
+    setYtSaving(true);
+    const { error } = await supabase.from("media").insert({
+      title: ytTitle.trim() || "Vídeo do YouTube",
+      url: "https://www.youtube.com/watch?v=" + id,
+      type: "youtube",
+      duration: 0,
+      resolution: null,
+    });
+    setYtSaving(false);
+    if (error) {
+      toast.error("Não foi possível adicionar o vídeo");
+      return;
+    }
+    toast.success("Vídeo do YouTube adicionado");
+    setYtUrl("");
+    setYtTitle("");
+    load();
+    if (onChanged) onChanged();
+  }
 
   async function saveQr(m: MediaRow, value: string) {
     const next = value.trim() || null;
@@ -366,6 +498,90 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
         ) : null}
       </section>
 
+      <section className="cf-card p-5">
+        <div className="flex items-center gap-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+            <Youtube className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-extrabold">Adicionar vídeo do YouTube</h3>
+            <p className="text-xs text-muted-foreground">
+              Cole o link (watch, youtu.be, shorts) ou o link de uma playlist inteira
+              (youtube.com/playlist?list=... ou watch?v=...&list=...).
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor="yt-url">Link do YouTube</Label>
+            <Input
+              id="yt-url"
+              value={ytUrl}
+              onChange={(e) => setYtUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=... ou .../playlist?list=..."
+              className="h-11 rounded-xl"
+            />
+          </div>
+          {ytPlaylistId ? (
+            <div className="space-y-1.5 sm:col-span-2">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Link de playlist detectado — cada vídeo entra como um item separado na galeria.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="yt-title">Nome da mídia</Label>
+              <Input
+                id="yt-title"
+                value={ytTitle}
+                onChange={(e) => setYtTitle(e.target.value)}
+                placeholder="Ex.: Campanha de verão"
+                className="h-11 rounded-xl"
+              />
+            </div>
+          )}
+          {ytPlaylistId ? (
+            <Button
+              className="h-11 rounded-xl px-6 font-bold"
+              disabled={ytImporting}
+              onClick={importYoutubePlaylist}
+            >
+              <ListVideo className="mr-2 h-4 w-4" />
+              {ytImporting ? "Importando…" : "Importar playlist"}
+            </Button>
+          ) : (
+            <Button
+              className="h-11 rounded-xl px-6 font-bold"
+              disabled={!ytId || ytSaving}
+              onClick={addYoutube}
+            >
+              Adicionar
+            </Button>
+          )}
+        </div>
+
+        {ytUrl.trim() && !ytId && !ytPlaylistId ? (
+          <p className="mt-2 text-xs font-semibold text-destructive">
+            Link inválido — use watch?v=, youtu.be/, shorts/ ou um link de playlist.
+          </p>
+        ) : null}
+
+        {ytId && !ytPlaylistId ? (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-secondary/40 p-2">
+            <img
+              src={"https://i.ytimg.com/vi/" + ytId + "/mqdefault.jpg"}
+              alt="Prévia do vídeo do YouTube"
+              className="h-16 w-28 rounded-lg object-cover"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{ytTitle.trim() || "Vídeo do YouTube"}</p>
+              <p className="truncate text-[11px] text-muted-foreground">ID {ytId}</p>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="cf-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -403,18 +619,26 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
         {visible.map((m) => (
           <article key={m.id} className="cf-card group overflow-hidden p-0">
             <div className="relative flex aspect-video items-center justify-center bg-foreground/90">
-              {m.type === "image" ? (
+              {m.type === "youtube" ? (
+                <img
+                  src={"https://i.ytimg.com/vi/" + (parseYoutubeId(m.url) || "") + "/mqdefault.jpg"}
+                  alt={m.title}
+                  className="h-full w-full object-contain"
+                />
+              ) : m.type === "image" ? (
                 <img src={m.url} alt={m.title} className="h-full w-full object-contain" />
               ) : (
                 <video src={m.url} muted className="h-full w-full object-contain" />
               )}
               <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
-                {m.type === "video" ? (
+                {m.type === "youtube" ? (
+                  <Youtube className="h-3 w-3" />
+                ) : m.type === "video" ? (
                   <Film className="h-3 w-3" />
                 ) : (
                   <ImageIcon className="h-3 w-3" />
                 )}
-                {m.type === "video" ? "Vídeo" : "Imagem"}
+                {m.type === "youtube" ? "YouTube" : m.type === "video" ? "Vídeo" : "Imagem"}
               </span>
               <Button
                 size="icon"

@@ -6,6 +6,7 @@ import {
   LOGO_URL,
   TV_SELECT_COLUMNS,
   TV_STORAGE,
+  extractYoutubeId,
   getDeviceUuid,
   parsePlaylistItems,
   type EventPhoto,
@@ -32,6 +33,50 @@ const MANIFEST_KEY = "playlist";
 const HEARTBEAT_MS = 8000;
 const METADATA_GUARD_MS = 20000;
 const FADE_MS = 200;
+
+type YTPlayerInstance = {
+  mute: () => void;
+  unMute: () => void;
+  setVolume: (v: number) => void;
+  getDuration: () => number;
+  destroy: () => void;
+};
+type YTNamespace = {
+  Player: new (
+    el: HTMLElement,
+    opts: {
+      videoId: string;
+      playerVars: Record<string, number>;
+      events: {
+        onReady: (e: { target: YTPlayerInstance }) => void;
+        onStateChange: (e: { data: number; target: YTPlayerInstance }) => void;
+        onError: (e: { data: number }) => void;
+      };
+    },
+  ) => YTPlayerInstance;
+  PlayerState: { ENDED: number; PLAYING: number; BUFFERING: number };
+};
+
+let ytApiPromise: Promise<YTNamespace> | null = null;
+function loadYoutubeIframeApi(): Promise<YTNamespace> {
+  const w = window as unknown as {
+    YT?: YTNamespace;
+    onYouTubeIframeAPIReady?: () => void;
+  };
+  if (w.YT && w.YT.Player) return Promise.resolve(w.YT);
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise((resolve) => {
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      if (typeof prev === "function") prev();
+      resolve(w.YT as YTNamespace);
+    };
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+  });
+  return ytApiPromise;
+}
 
 export function TvPlayer() {
   const [status, setStatus] = useState<Status>("boot");
@@ -297,7 +342,7 @@ export function TvPlayer() {
       setIndex(0);
       setStatus("playing");
       saveManifest(MANIFEST_KEY, resolved);
-      precacheMedia(resolved).then(() => pruneCache(resolved));
+      precacheMedia(resolved.filter((it) => it.type !== "youtube")).then(() => pruneCache(resolved));
     } catch (err) {
       console.warn("[CENTERFRIOS] falha ao carregar playlist:", err);
       try {
@@ -379,10 +424,13 @@ export function TvPlayer() {
         refreshTv(tvIdRef.current);
         return;
       }
-      if (videoRef.current) {
-        videoRef.current.muted = cmd.action === "mute";
-      }
-
+      /* mute/unmute: nada a fazer aqui. sendCommand() no admin sempre muda
+         tv.muted junto com o command (mesmo update()), então o realtime
+         acima já vai re-renderizar o MediaLayer com o muted novo — e o
+         efeito de áudio ali é guardado (só escreve se o valor mudou). Uma
+         segunda escrita direta em videoRef aqui, sem esse guard, é a mesma
+         dupla renegociação de codec de áudio que travava o vídeo por
+         alguns segundos em Smart TVs/Fire OS ao desmutar.  */
     },
     [refreshTv],
   );
@@ -645,12 +693,12 @@ export function TvPlayer() {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
 
-    if (current.type === "video") {
-      // fallback genérico até os metadados chegarem (35s)
+    if (current.type === "video" || current.type === "youtube") {
+      // fallback genérico até os metadados/onEnded chegarem
       timerRef.current = setTimeout(() => {
         console.warn("[player] watchdog genérico disparado, avançando mídia");
         advance();
-      }, 35000);
+      }, current.type === "youtube" ? Math.max(35, current.duration || 0) * 1000 : 35000);
     } else {
       timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     }
@@ -714,6 +762,9 @@ export function TvPlayer() {
       ) : null}
       {tv?.show_presence_qr ? (
         <PresenceQr position={tv.presence_qr_position || "bottom-right"} />
+      ) : null}
+      {tv?.show_weather || tv?.show_currency ? (
+        <InfoBar showWeather={!!tv?.show_weather} showCurrency={!!tv?.show_currency} />
       ) : null}
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
@@ -1138,12 +1189,16 @@ function MediaLayer({
     return () => ro.disconnect();
   }, []);
 
-  // volume + mute nativo (sem Web Audio) para preservar a aceleração de hardware
+  // volume + mute nativo (sem Web Audio) para preservar a aceleração de hardware.
+  // Só reatribui se o valor realmente mudou — reescrever muted/volume sobre um
+  // decoder já estável força renegociação de codec de áudio em Smart TVs/Fire OS
+  // e trava a reprodução por alguns segundos (mesma causa raiz do stall ao desmutar).
   useEffect(() => {
     const el = localRef.current;
     if (!el) return;
-    el.volume = Math.min(1, Math.max(0, volume / 100));
-    if (layer.item.type === "video") el.muted = muted;
+    const vol = Math.min(1, Math.max(0, volume / 100));
+    if (Math.abs(el.volume - vol) > 0.001) el.volume = vol;
+    if (layer.item.type === "video" && el.muted !== muted) el.muted = muted;
   }, [layer.src, volume, muted, layer.item.type]);
 
   // IMPORTANTE: nenhuma Web Audio API aqui — AudioContext/createMediaElementSource
@@ -1218,6 +1273,23 @@ function MediaLayer({
   }
 
   const mediaKey = layer.item.media_id || layer.src;
+
+  if (layer.item.type === "youtube") {
+    return (
+      <div style={container}>
+        <YoutubeLayer
+          layer={layer}
+          muted={muted}
+          volume={volume}
+          onEnded={onEnded}
+          onError={onError}
+          onWaiting={onWaiting}
+          onResume={onResume}
+          onMetadata={onMetadata}
+        />
+      </div>
+    );
+  }
 
   if (layer.item.type === "video") {
     return (
@@ -1295,8 +1367,111 @@ function MediaLayer({
   );
 }
 
+/** Vídeo hospedado no YouTube: embed via IFrame Player API (não dá para tratar
+ * como arquivo de vídeo direto — a URL do YouTube é uma página, não um stream). */
+function YoutubeLayer({
+  layer,
+  muted,
+  volume,
+  onEnded,
+  onError,
+  onWaiting,
+  onResume,
+  onMetadata,
+}: {
+  layer: Layer;
+  muted: boolean;
+  volume: number;
+  onEnded?: () => void;
+  onError?: (info?: string) => void;
+  onWaiting?: () => void;
+  onResume?: () => void;
+  onMetadata?: (durationSeconds: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
+  const videoId = extractYoutubeId(layer.item.url) || "";
 
+  useEffect(() => {
+    let cancelled = false;
+    let player: YTPlayerInstance | null = null;
 
+    loadYoutubeIframeApi().then((YT) => {
+      if (cancelled || !containerRef.current) return;
+      player = new YT.Player(containerRef.current, {
+        videoId,
+        playerVars: {
+          autoplay: 1,
+          mute: 1,
+          controls: 0,
+          modestbranding: 1,
+          rel: 0,
+          playsinline: 1,
+          iv_load_policy: 3,
+          fs: 0,
+          disablekb: 1,
+        },
+        events: {
+          onReady: (e) => {
+            if (cancelled) return;
+            playerRef.current = e.target;
+            try {
+              e.target.setVolume(Math.round(Math.min(1, Math.max(0, volume / 100)) * 100));
+              if (muted) e.target.mute();
+              else e.target.unMute();
+              const d = e.target.getDuration();
+              if (d && onMetadata) onMetadata(d);
+            } catch {
+              /* ignore */
+            }
+          },
+          onStateChange: (e) => {
+            if (cancelled) return;
+            if (e.data === YT.PlayerState.ENDED) {
+              if (onEnded) onEnded();
+            } else if (e.data === YT.PlayerState.PLAYING) {
+              if (onResume) onResume();
+              const d = e.target.getDuration();
+              if (d && onMetadata) onMetadata(d);
+            } else if (e.data === YT.PlayerState.BUFFERING) {
+              if (onWaiting) onWaiting();
+            }
+          },
+          onError: (e) => {
+            if (!cancelled && onError) onError("youtube_" + e.data);
+          },
+        },
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      playerRef.current = null;
+      if (player) {
+        try {
+          player.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId]);
+
+  useEffect(() => {
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      if (muted) p.mute();
+      else p.unMute();
+      p.setVolume(Math.round(Math.min(1, Math.max(0, volume / 100)) * 100));
+    } catch {
+      /* ignore */
+    }
+  }, [muted, volume]);
+
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
+}
 
 function SponsorRail({
   sponsors,
@@ -1493,11 +1668,115 @@ function BufferSpinner() {
 
 /** Pré-carrega apenas imagens: vídeos nunca são montados em paralelo (single-decoding). */
 function Preloader({ item }: { item: ResolvedItem | null }) {
-  if (!item || item.type === "video") return null;
+  if (!item || item.type === "video" || item.type === "youtube") return null;
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
 
 
+
+/** Previsão do tempo (Maceió/AL) + cotação USD/EUR. Fontes públicas, sem chave de API. */
+function weatherEmoji(code: number | null): string {
+  if (code === null) return "🌡️";
+  if (code === 0) return "☀️";
+  if (code <= 3) return "⛅";
+  if (code <= 48) return "🌫️";
+  if (code <= 67) return "🌧️";
+  if (code <= 77) return "🌨️";
+  if (code <= 82) return "🌦️";
+  return "⛈️";
+}
+
+function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurrency: boolean }) {
+  const [temp, setTemp] = useState<number | null>(null);
+  const [weatherCode, setWeatherCode] = useState<number | null>(null);
+  const [usd, setUsd] = useState<number | null>(null);
+  const [eur, setEur] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!showWeather) return;
+    let stop = false;
+    async function load() {
+      try {
+        const res = await fetch(
+          "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089&current=temperature_2m,weather_code&timezone=America%2FMaceio",
+        );
+        const data = await res.json();
+        if (stop) return;
+        setTemp(typeof data?.current?.temperature_2m === "number" ? data.current.temperature_2m : null);
+        setWeatherCode(typeof data?.current?.weather_code === "number" ? data.current.weather_code : null);
+      } catch {
+        /* mantém o último valor conhecido em vez de sumir da tela */
+      }
+    }
+    load();
+    const t = setInterval(load, 15 * 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [showWeather]);
+
+  useEffect(() => {
+    if (!showCurrency) return;
+    let stop = false;
+    async function load() {
+      try {
+        const res = await fetch("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL");
+        const data = await res.json();
+        if (stop) return;
+        const u = parseFloat(data?.USDBRL?.bid);
+        const e = parseFloat(data?.EURBRL?.bid);
+        setUsd(isFinite(u) ? u : null);
+        setEur(isFinite(e) ? e : null);
+      } catch {
+        /* mantém o último valor conhecido em vez de sumir da tela */
+      }
+    }
+    load();
+    const t = setInterval(load, 15 * 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [showCurrency]);
+
+  const weatherReady = showWeather && temp !== null;
+  const currencyReady = showCurrency && (usd !== null || eur !== null);
+  if (!weatherReady && !currencyReady) return null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: "24px",
+        left: "24px",
+        zIndex: 55,
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        backgroundColor: "rgba(10,57,129,0.88)",
+        borderRadius: "14px",
+        padding: "12px 18px",
+        color: "#FFFFFF",
+        boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+      }}
+    >
+      {weatherReady ? (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "22px", fontWeight: 800 }}>
+          <span>{weatherEmoji(weatherCode)}</span>
+          <span>{Math.round(temp as number)}°C</span>
+          <span style={{ fontSize: "14px", fontWeight: 600, opacity: 0.85 }}>Maceió</span>
+        </div>
+      ) : null}
+      {currencyReady ? (
+        <div style={{ display: "flex", gap: "14px", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
+          {usd !== null ? <span>US$ {usd.toFixed(2)}</span> : null}
+          {eur !== null ? <span>€ {eur.toFixed(2)}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function PresenceQr({ position }: { position: string }) {
   const [href, setHref] = useState("");

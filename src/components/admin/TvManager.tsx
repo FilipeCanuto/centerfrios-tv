@@ -510,6 +510,29 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 />
               </div>
 
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                  <Label htmlFor={"weather-" + tv.id} className="text-xs font-bold">
+                    Previsão do tempo
+                  </Label>
+                  <Switch
+                    id={"weather-" + tv.id}
+                    checked={!!tv.show_weather}
+                    onCheckedChange={(v) => patchTv(tv.id, { show_weather: v })}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+                  <Label htmlFor={"currency-" + tv.id} className="text-xs font-bold">
+                    Cotação Dólar/Euro
+                  </Label>
+                  <Switch
+                    id={"currency-" + tv.id}
+                    checked={!!tv.show_currency}
+                    onCheckedChange={(v) => patchTv(tv.id, { show_currency: v })}
+                  />
+                </div>
+              </div>
+
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   size="sm"
