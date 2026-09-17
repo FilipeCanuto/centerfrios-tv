@@ -17,7 +17,10 @@
   var TV_COLS = "id,name,is_paired,playlist_id,is_live_active,orientation,layout_mode,muted," +
     "ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit," +
     "sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until," +
-    "show_presence_qr,presence_qr_position,presence_logo_size";
+    "show_presence_qr,presence_qr_position,presence_logo_size,show_weather,show_currency";
+
+  var WEATHER_MS = 15 * 60 * 1000;
+  var CURRENCY_MS = 15 * 60 * 1000;
 
   var POLL_MS = 5000;        // estado da TV
   var HEARTBEAT_MS = 45000;  // fire-and-forget, NUNCA lido de volta
@@ -48,6 +51,8 @@
   var emptyEl = $("empty"), emptyMsg = $("empty-msg"), emptyCode = $("empty-code");
   var bootEl = $("boot"), bootMsg = $("boot-msg");
   var diagEl = $("diag");
+  var infobarEl = $("infobar"), weatherEl = $("infobar-weather"), currencyEl = $("infobar-currency");
+  var weatherIcon = $("infobar-weather-icon"), weatherTemp = $("infobar-weather-temp");
 
   /* ---------------- estado (nunca reativo) ---------------- */
   var tvId = null;
@@ -84,8 +89,10 @@
     zoneTop: null, zoneBottom: null,
     cornerVisible: null, qrPos: null, logoSize: null,
     sponsorsEnabled: null, sponsorsTickerTop: null, sponsorsTickerBottom: null,
-    showPresence: null, presencePos: null
+    showPresence: null, presencePos: null,
+    showWeather: null, showCurrency: null
   };
+  var weatherTimer = null, currencyTimer = null;
 
   /* ---------------- utils ---------------- */
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -148,6 +155,31 @@
       finish(xhr.status >= 200 && xhr.status < 300 ? null : new Error("HTTP " + xhr.status), d);
     };
     xhr.send(body ? JSON.stringify(body) : null);
+  }
+
+  /* GET simples para APIs públicas externas (sem header de auth do Supabase) */
+  function httpGetJson(url, cb) {
+    var done = false;
+    function finish(err, data) { if (!done) { done = true; cb(err, data); } }
+    if (typeof window.fetch === "function") {
+      window.fetch(url).then(function (r) {
+        return r.text().then(function (t) { return { ok: r.ok, t: t }; });
+      }).then(function (o) {
+        var d = null;
+        try { d = o.t ? JSON.parse(o.t) : null; } catch (e) { d = null; }
+        finish(o.ok ? null : new Error("HTTP"), d);
+      })["catch"](function (e) { finish(e, null); });
+      return;
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      var d = null;
+      try { d = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (e) { d = null; }
+      finish(xhr.status >= 200 && xhr.status < 300 ? null : new Error("HTTP " + xhr.status), d);
+    };
+    xhr.send(null);
   }
 
   function qrSrc(data, size) {
@@ -254,7 +286,8 @@
       var sig = [row.orientation, row.layout_mode, row.media_fit, row.ticker_position, row.ticker_text,
         row.qr_position, row.qr_url, row.muted, row.volume, row.sponsors_enabled,
         row.show_presence_qr, row.presence_qr_position, row.welcome_message, row.welcome_until,
-        row.countdown_label, row.countdown_ends_at, row.presence_logo_size].join("|");
+        row.countdown_label, row.countdown_ends_at, row.presence_logo_size,
+        row.show_weather, row.show_currency].join("|");
       if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); ytApplyAudio(activeYt); }
 
       setLive(!!row.is_live_active);
@@ -421,6 +454,82 @@
     if (lastLayout.sponsorsTickerBottom !== sBottom) { lastLayout.sponsorsTickerBottom = sBottom; sponsorsEl.style.bottom = sBottom; }
   }
 
+  /* Previsão do tempo (Maceió/AL) + cotação USD/EUR. Fontes públicas, sem chave de API. */
+  function weatherEmojiFor(code) {
+    if (code === null || code === undefined) return "🌡️";
+    if (code === 0) return "☀️";
+    if (code <= 3) return "⛅";
+    if (code <= 48) return "🌫️";
+    if (code <= 67) return "🌧️";
+    if (code <= 77) return "🌨️";
+    if (code <= 82) return "🌦️";
+    return "⛈️";
+  }
+
+  function loadWeather() {
+    if (!tv || !tv.show_weather) return;
+    httpGetJson(
+      "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089" +
+        "&current=temperature_2m,weather_code&timezone=America%2FMaceio",
+      function (err, data) {
+        if (err || !data || !data.current) return; // mantém o último valor exibido
+        var t = data.current.temperature_2m;
+        if (typeof t === "number") weatherTemp.innerHTML = Math.round(t) + "&deg;C";
+        weatherIcon.innerHTML = weatherEmojiFor(data.current.weather_code);
+        showEl(weatherEl, true);
+        weatherEl.style.display = "flex";
+      }
+    );
+  }
+
+  function loadCurrency() {
+    if (!tv || !tv.show_currency) return;
+    httpGetJson("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL", function (err, data) {
+      if (err || !data) return; // mantém o último valor exibido
+      var usd = data.USDBRL && parseFloat(data.USDBRL.bid);
+      var eur = data.EURBRL && parseFloat(data.EURBRL.bid);
+      var html = "";
+      if (usd && isFinite(usd)) html += "<span>US$ " + usd.toFixed(2) + "</span>";
+      if (eur && isFinite(eur)) html += "<span>&euro; " + eur.toFixed(2) + "</span>";
+      if (!html) return;
+      currencyEl.innerHTML = html;
+      currencyEl.style.display = "flex";
+    });
+  }
+
+  function applyWeather(row) {
+    var show = !!row.show_weather;
+    if (lastLayout.showWeather === show) return;
+    lastLayout.showWeather = show;
+    if (show) {
+      loadWeather();
+      if (!weatherTimer) weatherTimer = setInterval(loadWeather, WEATHER_MS);
+    } else {
+      showEl(weatherEl, false);
+      if (weatherTimer) { clearInterval(weatherTimer); weatherTimer = null; }
+    }
+    updateInfobarVisibility();
+  }
+
+  function applyCurrency(row) {
+    var show = !!row.show_currency;
+    if (lastLayout.showCurrency === show) return;
+    lastLayout.showCurrency = show;
+    if (show) {
+      loadCurrency();
+      if (!currencyTimer) currencyTimer = setInterval(loadCurrency, CURRENCY_MS);
+    } else {
+      showEl(currencyEl, false);
+      if (currencyTimer) { clearInterval(currencyTimer); currencyTimer = null; }
+    }
+    updateInfobarVisibility();
+  }
+
+  function updateInfobarVisibility() {
+    var on = !!(tv && (tv.show_weather || tv.show_currency));
+    infobarEl.style.display = on ? "flex" : "none";
+  }
+
   function applyLayout(row) {
     var portrait = row.orientation === "portrait";
     var fit = row.media_fit === "cover" ? "cover" : "contain";
@@ -434,6 +543,8 @@
     applyAudio(row);
     applyPresence(row);
     applySponsors(row, multizone && tickerPos !== "hidden", tickerPos);
+    applyWeather(row);
+    applyCurrency(row);
     tickClock();
   }
 
