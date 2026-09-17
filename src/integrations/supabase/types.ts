@@ -272,6 +272,7 @@ export type Database = {
           orientation: string
           pairing_code: string
           playlist_id: string | null
+          presence_logo_size: number | null
           presence_qr_position: string
           qr_position: string
           qr_url: string | null
@@ -304,6 +305,7 @@ export type Database = {
           orientation?: string
           pairing_code: string
           playlist_id?: string | null
+          presence_logo_size?: number | null
           presence_qr_position?: string
           qr_position?: string
           qr_url?: string | null
@@ -336,6 +338,7 @@ export type Database = {
           orientation?: string
           pairing_code?: string
           playlist_id?: string | null
+          presence_logo_size?: number | null
           presence_qr_position?: string
           qr_position?: string
           qr_url?: string | null
