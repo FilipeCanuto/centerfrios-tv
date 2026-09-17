@@ -125,9 +125,7 @@ export type AlertTemplate = {
 };
 
 export const TV_SELECT_COLUMNS =
-  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position";
-// show_weather/show_currency ficam fora ate a migration rodar no banco de verdade
-// (coluna inexistente -> 400 quebrava o poll inteiro de TODAS as TVs).
+  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position,show_weather,show_currency";
 
 
 export function makeNonce(): string {

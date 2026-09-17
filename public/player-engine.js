@@ -17,10 +17,8 @@
   var TV_COLS = "id,name,is_paired,playlist_id,is_live_active,orientation,layout_mode,muted," +
     "ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit," +
     "sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until," +
-    "show_presence_qr,presence_qr_position,presence_logo_size";
-  /* show_weather/show_currency ficam de fora do SELECT ate a migration rodar
-     de verdade no banco (coluna nao existe ainda -> 400 quebrava o poll
-     inteiro de TODAS as TVs). Reativar em TV_COLS assim que confirmado. */
+    "show_presence_qr,presence_qr_position,presence_logo_size," +
+    "show_weather,show_currency";
 
   var WEATHER_MS = 15 * 60 * 1000;
   var CURRENCY_MS = 15 * 60 * 1000;
