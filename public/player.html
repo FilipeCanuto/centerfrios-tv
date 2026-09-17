@@ -68,6 +68,12 @@
   #empty .code { font-size:110px; font-weight:bold; letter-spacing:14px; color:#FFC700; }
   #boot .msg { font-size:30px; margin-top:36px; color:#FFC700; }
   #diag { position:absolute; right:12px; bottom:8px; font-size:12px; color:#333; z-index:90; }
+  #infobar { position:absolute; top:24px; left:24px; z-index:55; display:none;
+    flex-direction:column; gap:6px; background:rgba(10,57,129,.88); border-radius:14px;
+    padding:12px 18px; color:#fff; box-shadow:0 12px 40px rgba(0,0,0,.5); }
+  #infobar .weather { display:none; align-items:center; gap:10px; font-size:22px; font-weight:800; }
+  #infobar .weather span.city { font-size:14px; font-weight:600; opacity:.85; }
+  #infobar .currency { display:none; gap:14px; font-size:16px; font-weight:700; color:#FFC700; }
 </style>
 </head>
 <body>
@@ -112,6 +118,10 @@
       <div class="slog">CENTERFRIOS &mdash; Crescendo com voc&ecirc;</div>
     </div>
 
+    <div id="infobar">
+      <div class="weather" id="infobar-weather"><span id="infobar-weather-icon">🌡️</span><span id="infobar-weather-temp"></span><span class="city">Maceió</span></div>
+      <div class="currency" id="infobar-currency"></div>
+    </div>
     <div id="diag"></div>
   </div>
 </div>
@@ -121,7 +131,7 @@
    NÃO usar hash de commit (dependência circular: hash só existe após o commit).
    Exemplo de atualização: v=20260901001516 → v=20260902120000
    Sem isso, browsers e TVs Fire OS servem a versão antiga em cache. */
-(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260915032500";document.head.appendChild(s);}());
+(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260916224450";document.head.appendChild(s);}());
 </script>
 </body>
 </html>

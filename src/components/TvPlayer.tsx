@@ -763,6 +763,9 @@ export function TvPlayer() {
       {tv?.show_presence_qr ? (
         <PresenceQr position={tv.presence_qr_position || "bottom-right"} />
       ) : null}
+      {tv?.show_weather || tv?.show_currency ? (
+        <InfoBar showWeather={!!tv?.show_weather} showCurrency={!!tv?.show_currency} />
+      ) : null}
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
   );
@@ -1670,6 +1673,110 @@ function Preloader({ item }: { item: ResolvedItem | null }) {
 }
 
 
+
+/** Previsão do tempo (Maceió/AL) + cotação USD/EUR. Fontes públicas, sem chave de API. */
+function weatherEmoji(code: number | null): string {
+  if (code === null) return "🌡️";
+  if (code === 0) return "☀️";
+  if (code <= 3) return "⛅";
+  if (code <= 48) return "🌫️";
+  if (code <= 67) return "🌧️";
+  if (code <= 77) return "🌨️";
+  if (code <= 82) return "🌦️";
+  return "⛈️";
+}
+
+function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurrency: boolean }) {
+  const [temp, setTemp] = useState<number | null>(null);
+  const [weatherCode, setWeatherCode] = useState<number | null>(null);
+  const [usd, setUsd] = useState<number | null>(null);
+  const [eur, setEur] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!showWeather) return;
+    let stop = false;
+    async function load() {
+      try {
+        const res = await fetch(
+          "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089&current=temperature_2m,weather_code&timezone=America%2FMaceio",
+        );
+        const data = await res.json();
+        if (stop) return;
+        setTemp(typeof data?.current?.temperature_2m === "number" ? data.current.temperature_2m : null);
+        setWeatherCode(typeof data?.current?.weather_code === "number" ? data.current.weather_code : null);
+      } catch {
+        /* mantém o último valor conhecido em vez de sumir da tela */
+      }
+    }
+    load();
+    const t = setInterval(load, 15 * 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [showWeather]);
+
+  useEffect(() => {
+    if (!showCurrency) return;
+    let stop = false;
+    async function load() {
+      try {
+        const res = await fetch("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL");
+        const data = await res.json();
+        if (stop) return;
+        const u = parseFloat(data?.USDBRL?.bid);
+        const e = parseFloat(data?.EURBRL?.bid);
+        setUsd(isFinite(u) ? u : null);
+        setEur(isFinite(e) ? e : null);
+      } catch {
+        /* mantém o último valor conhecido em vez de sumir da tela */
+      }
+    }
+    load();
+    const t = setInterval(load, 15 * 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [showCurrency]);
+
+  const weatherReady = showWeather && temp !== null;
+  const currencyReady = showCurrency && (usd !== null || eur !== null);
+  if (!weatherReady && !currencyReady) return null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: "24px",
+        left: "24px",
+        zIndex: 55,
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        backgroundColor: "rgba(10,57,129,0.88)",
+        borderRadius: "14px",
+        padding: "12px 18px",
+        color: "#FFFFFF",
+        boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+      }}
+    >
+      {weatherReady ? (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "22px", fontWeight: 800 }}>
+          <span>{weatherEmoji(weatherCode)}</span>
+          <span>{Math.round(temp as number)}°C</span>
+          <span style={{ fontSize: "14px", fontWeight: 600, opacity: 0.85 }}>Maceió</span>
+        </div>
+      ) : null}
+      {currencyReady ? (
+        <div style={{ display: "flex", gap: "14px", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
+          {usd !== null ? <span>US$ {usd.toFixed(2)}</span> : null}
+          {eur !== null ? <span>€ {eur.toFixed(2)}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function PresenceQr({ position }: { position: string }) {
   const [href, setHref] = useState("");
