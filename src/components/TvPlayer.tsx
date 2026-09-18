@@ -1120,7 +1120,7 @@ export function TvPlayer() {
                       background: "linear-gradient(180deg,#ffffff,#d9dfe8)",
                       borderTop: tickerPosition === "top" ? undefined : "4px solid #0A3981",
                       borderBottom: tickerPosition === "top" ? "4px solid #0A3981" : undefined,
-                      boxShadow: "0 0 30px rgba(0,0,0,0.5)",
+                      boxShadow: "inset 0 -4px 0 #FFC700, 0 0 30px rgba(0,0,0,0.5)",
                     }
                   : {}),
                 color: "#FFFFFF",
@@ -1984,12 +1984,12 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
       <div
         style={{
           ...NEWS_PANEL,
-          flex: "0 0 350px",
-          padding: "0 50px 0 24px",
-          fontSize: "36px",
+          flex: "0 0 252px",
+          padding: "0 36px 0 16px",
+          fontSize: "24px",
           fontWeight: 900,
           letterSpacing: "1px",
-          clipPath: "polygon(0 0,100% 0,calc(100% - 30px) 100%,0 100%)",
+          clipPath: "polygon(0 0,100% 0,calc(100% - 22px) 100%,0 100%)",
         }}
       >
         CENTER<span style={{ color: "#FFC700" }}>NEWS</span>
@@ -2023,7 +2023,7 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           style={{
             height: "100%",
             alignItems: "center",
-            fontSize: "38px",
+            fontSize: "42px",
             fontWeight: 800,
             animationDuration: dur + "s",
           }}
@@ -2035,13 +2035,13 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
       <div
         style={{
           ...NEWS_PANEL,
-          flex: "0 0 190px",
+          flex: "0 0 128px",
           marginLeft: "-20px",
-          padding: "0 22px 0 52px",
-          fontSize: "38px",
+          padding: "0 16px 0 40px",
+          fontSize: "30px",
           fontWeight: 700,
           textAlign: "right",
-          clipPath: "polygon(30px 0,100% 0,100% 100%,0 100%)",
+          clipPath: "polygon(22px 0,100% 0,100% 100%,0 100%)",
         }}
       >
         {clock}
