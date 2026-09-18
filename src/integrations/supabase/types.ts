@@ -265,10 +265,14 @@ export type Database = {
           last_ping: string | null
           layout_mode: string
           live_stream_url: string | null
+          logo_size: number
           media_fit: string
           memory_usage: string | null
           muted: boolean
           name: string
+          news_exclude: string | null
+          news_interval_min: number
+          news_queries: string | null
           orientation: string
           pairing_code: string
           playlist_id: string | null
@@ -278,6 +282,8 @@ export type Database = {
           qr_url: string | null
           screen_resolution: string | null
           show_currency: boolean
+          show_logo: boolean
+          show_news_ticker: boolean
           show_presence_qr: boolean
           show_weather: boolean
           sponsors_enabled: boolean
@@ -300,10 +306,14 @@ export type Database = {
           last_ping?: string | null
           layout_mode?: string
           live_stream_url?: string | null
+          logo_size?: number
           media_fit?: string
           memory_usage?: string | null
           muted?: boolean
           name?: string
+          news_exclude?: string | null
+          news_interval_min?: number
+          news_queries?: string | null
           orientation?: string
           pairing_code: string
           playlist_id?: string | null
@@ -313,6 +323,8 @@ export type Database = {
           qr_url?: string | null
           screen_resolution?: string | null
           show_currency?: boolean
+          show_logo?: boolean
+          show_news_ticker?: boolean
           show_presence_qr?: boolean
           show_weather?: boolean
           sponsors_enabled?: boolean
@@ -335,10 +347,14 @@ export type Database = {
           last_ping?: string | null
           layout_mode?: string
           live_stream_url?: string | null
+          logo_size?: number
           media_fit?: string
           memory_usage?: string | null
           muted?: boolean
           name?: string
+          news_exclude?: string | null
+          news_interval_min?: number
+          news_queries?: string | null
           orientation?: string
           pairing_code?: string
           playlist_id?: string | null
@@ -348,6 +364,8 @@ export type Database = {
           qr_url?: string | null
           screen_resolution?: string | null
           show_currency?: boolean
+          show_logo?: boolean
+          show_news_ticker?: boolean
           show_presence_qr?: boolean
           show_weather?: boolean
           sponsors_enabled?: boolean
