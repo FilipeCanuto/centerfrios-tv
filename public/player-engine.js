@@ -49,7 +49,8 @@
   var vidA = $("media-a"), vidB = $("media-b");
   var imgA = $("img-a"), imgB = $("img-b");
   var liveImg = $("live-img"), liveTag = $("livetag");
-  var tickerEl = $("ticker"), tickerText = $("ticker-text"), tickerNews = $("ticker-news");
+  var tickerEl = $("ticker"), tickerText = $("ticker-text"), tickerNews = $("ticker-news"),
+    tickerBadge = $("ticker-badge"), tickerTrack = $("ticker-track");
   var cornerEl = $("corner"), cornerQr = $("corner-qr");
   var sponsorsEl = $("sponsors"), sponsorsList = $("sponsors-list");
   var presenceEl = $("presence"), presenceQr = $("presence-qr");
@@ -596,7 +597,9 @@
     if (mode !== tickerMode) {
       tickerMode = mode;
       tickerText.style.display = useNews ? "none" : "inline-block";
-      tickerNews.style.display = useNews ? "inline-block" : "none";
+      tickerBadge.style.display = useNews ? "block" : "none";
+      tickerTrack.style.display = useNews ? "block" : "none";
+      tickerEl.className = useNews ? "pro" : "";
       tickerNewsKey = "";
     }
     if (!useNews) return;
@@ -606,8 +609,8 @@
     tickerNewsKey = key;
     for (k = 0; k < 2; k++) {
       for (i = 0; i < items.length; i++) {
-        html += '<span class="ni"><span style="color:' + (items[i].promo ? "#FFC700" : "#fff") + '">' + esc(items[i].text) + "</span>" +
-          (items[i].source ? '<span class="ns">' + esc(items[i].source) + "</span>" : "") + '<span class="nd">&#9670;</span></span>';
+        html += '<span class="ni"><span class="' + (items[i].promo ? "np" : "nt") + '">' + esc(items[i].text) + "</span>" +
+          (items[i].source ? '<span class="ns">' + esc(items[i].source) + "</span>" : "") + '</span><span class="nd"></span>';
       }
     }
     tickerNews.innerHTML = html;

@@ -1113,7 +1113,16 @@ export function TvPlayer() {
                 top: tickerPosition === "top" ? 0 : undefined,
                 bottom: tickerPosition === "top" ? undefined : 0,
                 height: "90px",
+                boxSizing: "border-box",
                 backgroundColor: "#0A3981",
+                ...(newsItems.length
+                  ? {
+                      background: "linear-gradient(90deg,#061a42,#0A3981 55%,#0c4aa6)",
+                      borderTop: tickerPosition === "top" ? undefined : "3px solid #FFC700",
+                      borderBottom: tickerPosition === "top" ? "3px solid #FFC700" : undefined,
+                      boxShadow: "0 0 30px rgba(0,0,0,0.45)",
+                    }
+                  : {}),
                 color: "#FFFFFF",
                 display: "flex",
                 alignItems: "center",
@@ -1894,8 +1903,8 @@ function PresenceQr({ position }: { position: string }) {
   );
 }
 
-// Ticker contínuo (direita → esquerda) sem emenda: o conteúdo é duplicado e animado até -50%.
-// A duração vem da largura real (velocidade constante) e só troca quando as manchetes mudam.
+// Rodapé estilo canal de notícias: selo fixo à esquerda + faixa rolando (direita → esquerda) sem emenda.
+// O conteúdo é duplicado e animado até -50%; a duração vem da largura real (~140 px/s).
 function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [dur, setDur] = useState(120);
@@ -1904,28 +1913,91 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
     const el = ref.current;
     if (!el) return;
     const half = el.scrollWidth / 2;
-    if (half > 0) setDur(Math.max(30, Math.round(half / 140))); // ~140 px/s
+    if (half > 0) setDur(Math.max(30, Math.round(half / 140)));
   }, [key]);
   const row = (suffix: string) =>
     items.map((it, i) => (
       <span key={suffix + i} style={{ display: "inline-flex", alignItems: "center" }}>
-        <span style={{ color: it.promo ? "#FFC700" : "#FFFFFF" }}>{it.text}</span>
+        <span style={{ color: it.promo ? "#FFC700" : "#FFFFFF", fontWeight: it.promo ? 700 : 600 }}>
+          {it.text}
+        </span>
         {it.source ? (
-          <span style={{ color: "#FFC700", fontSize: "30px", fontWeight: 700, marginLeft: "16px" }}>
+          <span
+            style={{
+              marginLeft: "18px",
+              padding: "0 12px",
+              lineHeight: "32px",
+              fontSize: "19px",
+              fontWeight: 700,
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              color: "#FFC700",
+              border: "1.5px solid rgba(255,199,0,0.55)",
+              borderRadius: "6px",
+            }}
+          >
             {it.source}
           </span>
         ) : null}
-        <span style={{ color: "#FFC700", margin: "0 40px" }}>◆</span>
+        <span
+          style={{
+            width: "2px",
+            height: "34px",
+            margin: "0 46px",
+            background: "rgba(255,255,255,0.28)",
+          }}
+        />
       </span>
     ));
   return (
-    <div
-      ref={ref}
-      className="cf-news"
-      style={{ fontSize: "40px", fontWeight: 800, animationDuration: dur + "s" }}
-    >
-      {row("a")}
-      {row("b")}
-    </div>
+    <>
+      <div
+        style={{
+          flex: "0 0 280px",
+          alignSelf: "stretch",
+          zIndex: 3,
+          boxSizing: "border-box",
+          padding: "8px 40px 0 26px",
+          background: "#FFC700",
+          color: "#0A3981",
+          clipPath: "polygon(0 0,100% 0,calc(100% - 26px) 100%,0 100%)",
+        }}
+      >
+        <div style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "4px", opacity: 0.85, lineHeight: "20px" }}>
+          CENTERFRIOS
+        </div>
+        <div style={{ fontSize: "32px", fontWeight: 900, letterSpacing: "2px", lineHeight: "36px" }}>
+          NOTÍCIAS
+        </div>
+      </div>
+      <div style={{ position: "relative", flex: 1, alignSelf: "stretch", overflow: "hidden", marginLeft: "-10px" }}>
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "70px",
+            zIndex: 2,
+            background: "linear-gradient(90deg,#0A3981,rgba(10,57,129,0))",
+          }}
+        />
+        <div
+          ref={ref}
+          className="cf-news"
+          style={{
+            height: "100%",
+            alignItems: "center",
+            fontSize: "36px",
+            fontWeight: 600,
+            letterSpacing: "0.3px",
+            animationDuration: dur + "s",
+          }}
+        >
+          {row("a")}
+          {row("b")}
+        </div>
+      </div>
+    </>
   );
 }
