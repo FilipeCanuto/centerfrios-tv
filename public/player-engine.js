@@ -104,7 +104,7 @@
     showWeather: null, showCurrency: null, showLogo: null, logoH: null
   };
   var weatherTimer = null, currencyTimer = null;
-  var newsTimer = null, newsHeadlines = [], newsKey = "", newsLoadedSig = null, tickerMode = "", tickerNewsKey = "";
+  var newsRetry = null, newsTimer = null, newsHeadlines = [], newsKey = "", newsLoadedSig = null, tickerMode = "", tickerNewsKey = "";
 
   /* ---------------- utils ---------------- */
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -633,8 +633,14 @@
     if (tv.news_queries) qs.push("queries=" + encodeURIComponent(tv.news_queries));
     if (tv.news_exclude) qs.push("exclude=" + encodeURIComponent(tv.news_exclude));
     httpGetJson("/api/public/news" + (qs.length ? "?" + qs.join("&") : ""), function (err, data) {
-      /* falhou: mantém o último cache válido, sem mexer na tela */
-      if (err || !data || !data.items || !data.items.length) return;
+      /* falhou: mantém o último cache válido, sem mexer na tela.
+         Sem nada para mostrar ainda, tenta de novo em 60 s (não espera o ciclo de 30 min). */
+      if (err || !data || !data.items || !data.items.length) {
+        if (!newsHeadlines.length && !newsRetry) {
+          newsRetry = setTimeout(function () { newsRetry = null; loadNews(); }, 60000);
+        }
+        return;
+      }
       newsHeadlines = data.items;
       lsSet(K_NEWS, JSON.stringify({ sig: newsLoadedSig, items: data.items }));
       renderTicker();

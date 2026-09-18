@@ -1,6 +1,6 @@
 // Cliente do rodapé de notícias: busca /api/public/news, mantém cache local (último válido)
 // e expõe useNewsTicker() com a lista pronta para rotação (manchetes + texto manual intercalado).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { readCache, writeCache, type NewsTickerItem } from "@/lib/centerfrios";
 
 const CACHE_KEY = "cf_news_cache";
@@ -59,12 +59,26 @@ export function useNewsTicker(opts: {
     return c && c.sig === sig ? c.items : [];
   });
 
+  const headlinesRef = useRef(headlines);
+  headlinesRef.current = headlines;
+
   useEffect(() => {
     if (!enabled) return;
     let stop = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
     async function load() {
       const items = await fetchNews(queries, exclude);
-      if (stop || !items) return;
+      if (stop) return;
+      if (!items) {
+        // Falhou: mantém o cache. Sem nada para mostrar, tenta de novo em 60 s.
+        if (!headlinesRef.current.length && !retry) {
+          retry = setTimeout(() => {
+            retry = null;
+            load();
+          }, 60000);
+        }
+        return;
+      }
       setHeadlines(items);
       writeCache(CACHE_KEY, { items, savedAt: Date.now(), sig } satisfies Cached);
     }
@@ -73,6 +87,7 @@ export function useNewsTicker(opts: {
     const t = setInterval(load, ms);
     return () => {
       stop = true;
+      if (retry) clearTimeout(retry);
       clearInterval(t);
     };
   }, [enabled, queries, exclude, intervalMin, sig]);
