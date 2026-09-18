@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
+import { useNewsTicker } from "@/lib/news-ticker";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BRAND,
   LOGO_URL,
-  TV_SELECT_COLUMNS,
+  TV_SELECT_COLUMNS_FULL,
+  TV_SELECT_COLUMNS_LEGACY,
+  type NewsTickerItem,
   TV_STORAGE,
   extractYoutubeId,
   getDeviceUuid,
@@ -37,6 +40,18 @@ const FADE_MS = 200;
    Open-Meteo atualiza a fonte ~1x/hora e o Banco Central Europeu (cotação)
    ~1x/dia -- consultar mais rápido que isso não traz dado mais novo, só
    garante que a tela pegue a atualização assim que ela sai. */
+// Migration do rodapé de notícias pode ainda não estar aplicada: se a consulta completa
+// falhar por coluna inexistente, cai para as colunas antigas (e lembra da escolha).
+let useLegacyTvColumns = false;
+async function queryTv(id: string) {
+  if (!useLegacyTvColumns) {
+    const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_FULL).eq("id", id).maybeSingle();
+    if (!r.error) return r;
+    useLegacyTvColumns = true;
+  }
+  return supabase.from("tvs").select(TV_SELECT_COLUMNS_LEGACY).eq("id", id).maybeSingle();
+}
+
 const INFOBAR_REFRESH_MS = 60 * 1000;
 
 type YTPlayerInstance = {
@@ -377,11 +392,7 @@ export function TvPlayer() {
       }
       let row: TvRow | null = null;
       try {
-        const { data, error } = await supabase
-          .from("tvs")
-          .select(TV_SELECT_COLUMNS)
-          .eq("id", id)
-          .maybeSingle();
+        const { data, error } = await queryTv(id);
         if (error || !data) {
           setOffline(true);
           return;
@@ -577,11 +588,7 @@ export function TvPlayer() {
     const guard = setInterval(async () => {
       const id = tvIdRef.current;
       if (!id) return;
-      const { data } = await supabase
-        .from("tvs")
-        .select(TV_SELECT_COLUMNS)
-        .eq("id", id)
-        .maybeSingle();
+      const { data } = await queryTv(id);
       if (!data) return;
       const row = data as unknown as TvRow;
       const prev = tvRef.current;
@@ -637,6 +644,15 @@ export function TvPlayer() {
   const objectFit: "cover" | "contain" = tv?.media_fit === "cover" ? "cover" : "contain";
   const tickerPosition = tv?.ticker_position || "bottom";
   const qrPosition = tv?.qr_position || "top-right";
+  const showLogo = tv?.show_logo !== false;
+  const logoHeight = tv?.logo_size || 48;
+  const newsItems = useNewsTicker({
+    enabled: !!tv && tv.layout_mode === "multizone" && !!tv.show_news_ticker,
+    queries: tv?.news_queries ?? null,
+    exclude: tv?.news_exclude ?? null,
+    intervalMin: tv?.news_interval_min || 30,
+    manualText: tv?.ticker_text ?? null,
+  });
 
   const spotlightOn = !!(
     featured &&
@@ -1080,7 +1096,9 @@ export function TvPlayer() {
               ...corner,
             }}
           >
-            <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: "48px" }} />
+            {showLogo ? (
+              <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: logoHeight + "px" }} />
+            ) : null}
             {qrDataUrl ? (
               <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} />
             ) : null}
@@ -1102,9 +1120,13 @@ export function TvPlayer() {
                 overflow: "hidden",
               }}
             >
-              <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
-                {tv?.ticker_text || BRAND.slogan}
-              </div>
+              {newsItems.length ? (
+                <NewsMarquee items={newsItems} />
+              ) : (
+                <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
+                  {tv?.ticker_text || BRAND.slogan}
+                </div>
+              )}
             </div>
           ) : null}
         </>
@@ -1868,6 +1890,42 @@ function PresenceQr({ position }: { position: string }) {
       <span style={{ color: "#FFC700", fontSize: "20px", fontWeight: 800 }}>
         Confirme sua Presença
       </span>
+    </div>
+  );
+}
+
+// Ticker contínuo (direita → esquerda) sem emenda: o conteúdo é duplicado e animado até -50%.
+// A duração vem da largura real (velocidade constante) e só troca quando as manchetes mudam.
+function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [dur, setDur] = useState(120);
+  const key = items.map((i) => i.text + "|" + i.source).join("¦");
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const half = el.scrollWidth / 2;
+    if (half > 0) setDur(Math.max(30, Math.round(half / 140))); // ~140 px/s
+  }, [key]);
+  const row = (suffix: string) =>
+    items.map((it, i) => (
+      <span key={suffix + i} style={{ display: "inline-flex", alignItems: "center" }}>
+        <span style={{ color: it.promo ? "#FFC700" : "#FFFFFF" }}>{it.text}</span>
+        {it.source ? (
+          <span style={{ color: "#FFC700", fontSize: "30px", fontWeight: 700, marginLeft: "16px" }}>
+            {it.source}
+          </span>
+        ) : null}
+        <span style={{ color: "#FFC700", margin: "0 40px" }}>◆</span>
+      </span>
+    ));
+  return (
+    <div
+      ref={ref}
+      className="cf-news"
+      style={{ fontSize: "40px", fontWeight: 800, animationDuration: dur + "s" }}
+    >
+      {row("a")}
+      {row("b")}
     </div>
   );
 }

@@ -261,3 +261,20 @@
   animation: cf-ticker-scroll 26s linear infinite;
 }
 
+
+@keyframes cf-news-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.cf-news {
+  display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+  will-change: transform;
+  animation: cf-news-scroll 120s linear infinite;
+}

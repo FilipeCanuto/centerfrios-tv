@@ -71,6 +71,12 @@ export type TvRow = {
   presence_qr_position: string;
   show_weather: boolean;
   show_currency: boolean;
+  show_logo: boolean;
+  logo_size: number;
+  show_news_ticker: boolean;
+  news_queries: string | null;
+  news_exclude: string | null;
+  news_interval_min: number;
 };
 
 export type EventCheckin = {
@@ -126,6 +132,15 @@ export type AlertTemplate = {
 
 export const TV_SELECT_COLUMNS =
   "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position,show_weather,show_currency";
+
+// Colunas do rodapé de notícias / logo (migration 20260918150000). Enquanto a migration
+// não foi aplicada no banco, a consulta com elas falha: use TV_SELECT_COLUMNS_LEGACY.
+export const TV_NEWS_COLUMNS =
+  "show_logo,logo_size,show_news_ticker,news_queries,news_exclude,news_interval_min";
+export const TV_SELECT_COLUMNS_LEGACY = TV_SELECT_COLUMNS;
+export const TV_SELECT_COLUMNS_FULL = TV_SELECT_COLUMNS + "," + TV_NEWS_COLUMNS;
+
+export type NewsTickerItem = { text: string; source: string; promo?: boolean };
 
 
 export function makeNonce(): string {

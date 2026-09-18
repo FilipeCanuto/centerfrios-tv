@@ -16,6 +16,7 @@ import { Route as EnviarRouteImport } from './routes/enviar'
 import { Route as PlayerRouteImport } from './routes/player'
 import { Route as PresencaRouteImport } from './routes/presenca'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as ApiPublicNewsRouteImport } from './routes/api/public/news'
 import { Route as ApiPublicYoutubePlaylistRouteImport } from './routes/api/public/youtube-playlist'
 
 const IndexRoute = IndexRouteImport.update({
@@ -52,6 +53,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicNewsRoute = ApiPublicNewsRouteImport.update({
+  id: '/api/public/news',
+  path: '/api/public/news',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicYoutubePlaylistRoute =
   ApiPublicYoutubePlaylistRouteImport.update({
     id: '/api/public/youtube-playlist',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/player': typeof PlayerRoute
   '/presenca': typeof PresencaRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/api/public/news': typeof ApiPublicNewsRoute
   '/api/public/youtube-playlist': typeof ApiPublicYoutubePlaylistRoute
 }
 export interface FileRoutesByTo {
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/player': typeof PlayerRoute
   '/presenca': typeof PresencaRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/api/public/news': typeof ApiPublicNewsRoute
   '/api/public/youtube-playlist': typeof ApiPublicYoutubePlaylistRoute
 }
 export interface FileRoutesById {
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/player': typeof PlayerRoute
   '/presenca': typeof PresencaRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/api/public/news': typeof ApiPublicNewsRoute
   '/api/public/youtube-playlist': typeof ApiPublicYoutubePlaylistRoute
 }
 export interface FileRouteTypes {
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/player'
     | '/presenca'
     | '/admin'
+    | '/api/public/news'
     | '/api/public/youtube-playlist'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/player'
     | '/presenca'
     | '/admin'
+    | '/api/public/news'
     | '/api/public/youtube-playlist'
   id:
     | '__root__'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/player'
     | '/presenca'
     | '/_authenticated/admin'
+    | '/api/public/news'
     | '/api/public/youtube-playlist'
   fileRoutesById: FileRoutesById
 }
@@ -126,6 +138,7 @@ export interface RootRouteChildren {
   EnviarRoute: typeof EnviarRoute
   PlayerRoute: typeof PlayerRoute
   PresencaRoute: typeof PresencaRoute
+  ApiPublicNewsRoute: typeof ApiPublicNewsRoute
   ApiPublicYoutubePlaylistRoute: typeof ApiPublicYoutubePlaylistRoute
 }
 
@@ -180,6 +193,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/news': {
+      id: '/api/public/news'
+      path: '/api/public/news'
+      fullPath: '/api/public/news'
+      preLoaderRoute: typeof ApiPublicNewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/youtube-playlist': {
       id: '/api/public/youtube-playlist'
       path: '/api/public/youtube-playlist'
@@ -208,6 +228,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnviarRoute: EnviarRoute,
   PlayerRoute: PlayerRoute,
   PresencaRoute: PresencaRoute,
+  ApiPublicNewsRoute: ApiPublicNewsRoute,
   ApiPublicYoutubePlaylistRoute: ApiPublicYoutubePlaylistRoute,
 }
 export const routeTree = rootRouteImport

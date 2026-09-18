@@ -19,6 +19,11 @@
     "sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until," +
     "show_presence_qr,presence_qr_position,presence_logo_size," +
     "show_weather,show_currency";
+  /* Colunas da migration 20260918150000 (rodapé de notícias/logo). Se o banco ainda não as
+     tem, a consulta falha: cai para TV_COLS e re-tenta a completa a cada 10 min. */
+  var TV_COLS_NEWS = ",show_logo,logo_size,show_news_ticker,news_queries,news_exclude,news_interval_min";
+  var useNewsCols = true, newsColsRetryAt = 0;
+  var NEWS_PROMO_EVERY = 4;
 
   /* Intervalo mínimo praticável sem abusar de APIs públicas gratuitas.
      Open-Meteo atualiza a fonte ~1x/hora e o Banco Central Europeu (cotação)
@@ -44,7 +49,7 @@
   var vidA = $("media-a"), vidB = $("media-b");
   var imgA = $("img-a"), imgB = $("img-b");
   var liveImg = $("live-img"), liveTag = $("livetag");
-  var tickerEl = $("ticker"), tickerText = $("ticker-text");
+  var tickerEl = $("ticker"), tickerText = $("ticker-text"), tickerNews = $("ticker-news");
   var cornerEl = $("corner"), cornerQr = $("corner-qr");
   var sponsorsEl = $("sponsors"), sponsorsList = $("sponsors-list");
   var presenceEl = $("presence"), presenceQr = $("presence-qr");
@@ -95,9 +100,10 @@
     cornerVisible: null, qrPos: null, logoSize: null,
     sponsorsEnabled: null, sponsorsTickerTop: null, sponsorsTickerBottom: null,
     showPresence: null, presencePos: null,
-    showWeather: null, showCurrency: null
+    showWeather: null, showCurrency: null, showLogo: null, logoH: null
   };
   var weatherTimer = null, currencyTimer = null;
+  var newsTimer = null, newsHeadlines = [], newsKey = "", newsLoadedSig = null, tickerMode = "", tickerNewsKey = "";
 
   /* ---------------- utils ---------------- */
   function ls(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -278,8 +284,24 @@
   /* ---------------- polling do estado da TV ---------------- */
   function pollTv() {
     if (!tvId) return;
-    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS, null, function (err, rows) {
+    if (!useNewsCols && newsColsRetryAt && new Date().getTime() > newsColsRetryAt) { useNewsCols = true; newsColsRetryAt = 0; }
+    var wantNews = useNewsCols;
+    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS + (wantNews ? TV_COLS_NEWS : ""), null, function (err, rows) {
+      if (err && wantNews) {
+        req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS, null, function (err2, rows2) {
+          if (err2 || !rows2 || !rows2.length) { diag("sem conexao"); return; }
+          useNewsCols = false; newsColsRetryAt = new Date().getTime() + 10 * 60 * 1000;
+          handleTvRows(rows2);
+        });
+        return;
+      }
       if (err || !rows || !rows.length) { diag("sem conexao"); return; }
+      handleTvRows(rows);
+    });
+  }
+
+  function handleTvRows(rows) {
+    {
       diag("");
       var row = rows[0];
       var prev = tv;
@@ -292,7 +314,8 @@
         row.qr_position, row.qr_url, row.muted, row.volume, row.sponsors_enabled,
         row.show_presence_qr, row.presence_qr_position, row.welcome_message, row.welcome_until,
         row.countdown_label, row.countdown_ends_at, row.presence_logo_size,
-        row.show_weather, row.show_currency].join("|");
+        row.show_weather, row.show_currency, row.show_logo, row.logo_size, row.show_news_ticker,
+        row.news_queries, row.news_exclude, row.news_interval_min].join("|");
       if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); ytApplyAudio(activeYt); }
 
       setLive(!!row.is_live_active);
@@ -308,7 +331,7 @@
       }
       if (structural) loadPlaylist(row.playlist_id, row.event_mode);
       else if (!playing && items.length) startLoop();
-    });
+    }
   }
 
   function runCommand(cmd) {
@@ -369,8 +392,9 @@
       }
       if (lastLayout.tickerText !== tickerTxt) {
         lastLayout.tickerText = tickerTxt;
-        tickerText.innerHTML = String(tickerTxt || "CENTERFRIOS — Crescendo com você").replace(/</g, "&lt;");
+        tickerText.innerHTML = esc(tickerTxt || "CENTERFRIOS — Crescendo com você");
       }
+      renderTicker();
     }
     if (lastLayout.zoneTop !== zoneTop) { lastLayout.zoneTop = zoneTop; zone.style.top = zoneTop; }
     if (lastLayout.zoneBottom !== zoneBottom) { lastLayout.zoneBottom = zoneBottom; zone.style.bottom = zoneBottom; }
@@ -392,9 +416,15 @@
       if (lastLayout.logoSize !== logoSize) {
         lastLayout.logoSize = logoSize;
         var logoImg = cornerEl.querySelector("img.logo");
-        if (logoImg) logoImg.style.height = Math.round(logoSize / 2) + "px";
         if (cornerQr) { cornerQr.style.height = logoSize + "px"; cornerQr.style.width = logoSize + "px"; }
       }
+    }
+    var logoImg2 = cornerEl.querySelector("img.logo");
+    var showLogo = row.show_logo !== false;
+    var logoH = row.logo_size || 48;
+    if (logoImg2) {
+      if (lastLayout.showLogo !== showLogo) { lastLayout.showLogo = showLogo; logoImg2.style.display = showLogo ? "inline-block" : "none"; }
+      if (lastLayout.logoH !== logoH) { lastLayout.logoH = logoH; logoImg2.style.height = logoH + "px"; }
     }
     updateCornerQr();
   }
@@ -541,6 +571,82 @@
     infobarEl.style.display = on ? "flex" : "none";
   }
 
+
+  /* ---------------- rodapé de notícias (Google News via /api/public/news) ---------------- */
+  var K_NEWS = "cf_news_cache";
+  function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function newsOn() { return !!(tv && tv.layout_mode === "multizone" && tv.show_news_ticker); }
+
+  function newsItemsForTicker() {
+    var out = [], m = String((tv && tv.ticker_text) || "").replace(/^\s+|\s+$/g, "");
+    if (m) out.push({ text: m, source: "", promo: true });
+    for (var i = 0; i < newsHeadlines.length; i++) {
+      out.push({ text: newsHeadlines[i].text, source: newsHeadlines[i].source });
+      if (m && (i + 1) % NEWS_PROMO_EVERY === 0 && i + 1 < newsHeadlines.length) out.push({ text: m, source: "", promo: true });
+    }
+    return out;
+  }
+
+  /* Alterna entre texto manual (clássico) e marquee de manchetes sem piscar:
+     o marquee só é remontado quando o conteúdo realmente muda. */
+  function renderTicker() {
+    var useNews = newsOn() && newsHeadlines.length > 0;
+    var mode = useNews ? "news" : "text";
+    if (mode !== tickerMode) {
+      tickerMode = mode;
+      tickerText.style.display = useNews ? "none" : "inline-block";
+      tickerNews.style.display = useNews ? "inline-block" : "none";
+      tickerNewsKey = "";
+    }
+    if (!useNews) return;
+    var items = newsItemsForTicker(), key = "", html = "", k, i;
+    for (i = 0; i < items.length; i++) key += items[i].text + "|" + items[i].source + "¦";
+    if (key === tickerNewsKey) return;
+    tickerNewsKey = key;
+    for (k = 0; k < 2; k++) {
+      for (i = 0; i < items.length; i++) {
+        html += '<span class="ni"><span style="color:' + (items[i].promo ? "#FFC700" : "#fff") + '">' + esc(items[i].text) + "</span>" +
+          (items[i].source ? '<span class="ns">' + esc(items[i].source) + "</span>" : "") + '<span class="nd">&#9670;</span></span>';
+      }
+    }
+    tickerNews.innerHTML = html;
+    var dur = Math.max(30, Math.round((tickerNews.scrollWidth / 2) / 140)); /* ~140 px/s */
+    tickerNews.style.webkitAnimationDuration = dur + "s";
+    tickerNews.style.animationDuration = dur + "s";
+  }
+
+  function loadNews() {
+    if (!newsOn()) return;
+    var qs = [];
+    if (tv.news_queries) qs.push("queries=" + encodeURIComponent(tv.news_queries));
+    if (tv.news_exclude) qs.push("exclude=" + encodeURIComponent(tv.news_exclude));
+    httpGetJson("/api/public/news" + (qs.length ? "?" + qs.join("&") : ""), function (err, data) {
+      /* falhou: mantém o último cache válido, sem mexer na tela */
+      if (err || !data || !data.items || !data.items.length) return;
+      newsHeadlines = data.items;
+      lsSet(K_NEWS, JSON.stringify({ sig: newsLoadedSig, items: data.items }));
+      renderTicker();
+    });
+  }
+
+  function applyNews(row) {
+    var sig = (row.show_news_ticker ? "1" : "0") + "#" + (row.news_queries || "") + "#" + (row.news_exclude || "") + "#" + (row.news_interval_min || 30);
+    if (sig === newsLoadedSig) { renderTicker(); return; }
+    newsLoadedSig = sig;
+    if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
+    if (!newsOn()) { renderTicker(); return; }
+    if (!newsHeadlines.length) {
+      try {
+        var c = JSON.parse(ls(K_NEWS) || "null");
+        if (c && c.sig === sig && c.items && c.items.length) newsHeadlines = c.items;
+      } catch (e) {}
+    }
+    renderTicker();
+    loadNews();
+    newsTimer = setInterval(loadNews, Math.max(10, row.news_interval_min || 30) * 60 * 1000);
+  }
+
   function applyLayout(row) {
     var portrait = row.orientation === "portrait";
     var fit = row.media_fit === "cover" ? "cover" : "contain";
@@ -556,6 +662,7 @@
     applySponsors(row, multizone && tickerPos !== "hidden", tickerPos);
     applyWeather(row);
     applyCurrency(row);
+    applyNews(row);
     tickClock();
   }
 

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -534,6 +535,94 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   />
                 </div>
               </div>
+
+              {tv.layout_mode === "multizone" ? (
+                <div className="mt-2 space-y-2 rounded-xl border border-border bg-secondary/40 p-3">
+                  <p className="text-xs font-bold">Multi-zona — logomarca e rodapé de notícias</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
+                      <Label htmlFor={"logo-" + tv.id} className="text-xs font-bold">
+                        Logomarca no canto
+                      </Label>
+                      <Switch
+                        id={"logo-" + tv.id}
+                        checked={tv.show_logo !== false}
+                        onCheckedChange={(v) => patchTv(tv.id, { show_logo: v })}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2">
+                      <Label htmlFor={"news-" + tv.id} className="text-xs font-bold">
+                        Notícias no rodapé
+                      </Label>
+                      <Switch
+                        id={"news-" + tv.id}
+                        checked={!!tv.show_news_ticker}
+                        onCheckedChange={(v) => patchTv(tv.id, { show_news_ticker: v })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Tamanho da logomarca</Label>
+                      <Select
+                        value={String(tv.logo_size || 48)}
+                        onValueChange={(v) => patchTv(tv.id, { logo_size: parseInt(v, 10) })}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="32">Muito pequena (32px)</SelectItem>
+                          <SelectItem value="48">Pequena (48px)</SelectItem>
+                          <SelectItem value="72">Média (72px)</SelectItem>
+                          <SelectItem value="96">Grande (96px)</SelectItem>
+                          <SelectItem value="128">Extra grande (128px)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Atualizar notícias a cada</Label>
+                      <Select
+                        value={String(tv.news_interval_min || 30)}
+                        onValueChange={(v) => patchTv(tv.id, { news_interval_min: parseInt(v, 10) })}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="15">15 minutos</SelectItem>
+                          <SelectItem value="30">30 minutos</SelectItem>
+                          <SelectItem value="60">60 minutos</SelectItem>
+                          <SelectItem value="120">2 horas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs" htmlFor={"nq-" + tv.id}>
+                      Buscas de notícias (uma por linha; opcional prefixo de peso 1-3, ex.: 3|câmara fria). Vazio = padrão Center Frios
+                    </Label>
+                    <Textarea
+                      id={"nq-" + tv.id}
+                      rows={4}
+                      defaultValue={tv.news_queries || ""}
+                      placeholder={'3|("câmara fria" OR "balcão refrigerado") when:14d'}
+                      onBlur={(e) => patchTv(tv.id, { news_queries: e.target.value.trim() || null })}
+                      className="rounded-xl text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs" htmlFor={"nx-" + tv.id}>
+                      Termos a excluir além dos padrões (concorrentes, ruído) — um por linha
+                    </Label>
+                    <Textarea
+                      id={"nx-" + tv.id}
+                      rows={2}
+                      defaultValue={tv.news_exclude || ""}
+                      onBlur={(e) => patchTv(tv.id, { news_exclude: e.target.value.trim() || null })}
+                      className="rounded-xl text-xs"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
