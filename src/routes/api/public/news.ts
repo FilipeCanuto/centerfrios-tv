@@ -12,6 +12,8 @@ import {
   parseQueryLines,
   parseRss,
   rankHeadlines,
+  simplifyForBing,
+  type NewsQuery,
 } from "@/lib/news-feed";
 
 const CACHE_MS = 15 * 60 * 1000;
@@ -39,19 +41,35 @@ async function fetchText(url: string): Promise<Fetched> {
   }
 }
 
-// Google News primeiro; se vier vazio/bloqueado, tenta o Bing News. Uma nova tentativa em 429/5xx.
-async function fetchItems(q: string, diag: string[]) {
-  let g = await fetchText(buildNewsUrl(q));
-  if (g.status === 429 || g.status >= 500) g = await fetchText(buildNewsUrl(q));
-  let items = parseRss(g.xml);
-  let via = "g" + g.status;
-  if (!items.length) {
-    const b = await fetchText(buildBingNewsUrl(q));
-    items = parseRss(b.xml);
-    via += "/b" + b.status;
-  }
-  diag.push(via + ":" + items.length);
+// Circuit breaker: o Google bloqueia IPs de datacenter com frequência. Após 3 falhas seguidas,
+// pula o Google por 20 min (vai direto ao Bing) para não gastar tempo com timeouts.
+let googleFails = 0;
+let googleSkipUntil = 0;
+
+async function bingItems(q: NewsQuery, diag: string[]) {
+  const terms = (q.bing && q.bing.length ? q.bing : [simplifyForBing(q.q)]).filter(Boolean).slice(0, q.weight >= 3 ? 3 : 2);
+  const batches = await Promise.all(terms.map((t) => fetchText(buildBingNewsUrl(t))));
+  const items = batches.flatMap((b) => parseRss(b.xml));
+  diag.push("b" + batches.map((b) => b.status).join(",") + ":" + items.length);
   return items;
+}
+
+// Google News primeiro; se bloqueado/vazio, Bing News.
+async function fetchItems(q: NewsQuery, diag: string[]) {
+  if (Date.now() >= googleSkipUntil) {
+    const g = await fetchText(buildNewsUrl(q.q));
+    const items = parseRss(g.xml);
+    if (items.length) {
+      googleFails = 0;
+      diag.push("g" + g.status + ":" + items.length);
+      return items;
+    }
+    if (g.status === 0 || g.status === 429 || g.status >= 500) {
+      if (++googleFails >= 3) googleSkipUntil = Date.now() + 20 * 60 * 1000;
+    }
+    diag.push("g" + g.status);
+  }
+  return bingItems(q, diag);
 }
 
 // Executa com concorrência limitada para não disparar o rate limit do Google.
@@ -87,7 +105,7 @@ export const Route = createFileRoute("/api/public/news")({
 
         const diag: string[] = [];
         try {
-          const results = await mapLimit(queries, 5, (q) => fetchItems(q.q, diag));
+          const results = await mapLimit(queries, 5, (q) => fetchItems(q, diag));
           const batches = results.map((items, i) => ({ weight: queries[i].weight, items }));
           const ranked = rankHeadlines(batches, exclude, limit);
           if (!ranked.length) {

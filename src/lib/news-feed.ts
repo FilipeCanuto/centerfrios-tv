@@ -2,27 +2,29 @@
 // pontua por relevância para a Center Frios (Trilha A: equipamentos/refrigeração comercial)
 // e devolve as manchetes já ordenadas. Sem dependências (roda no worker).
 
-export type NewsQuery = { q: string; weight: number };
+// bing: buscas simples (só palavras-chave) usadas quando o Google News não responde —
+// o Bing não entende OR/parênteses/múltiplas aspas.
+export type NewsQuery = { q: string; weight: number; bing?: string[] };
 export type NewsHeadline = { title: string; source: string; link: string; publishedAt: string; score: number };
 
 export const DEFAULT_NEWS_QUERIES: NewsQuery[] = [
   // Peso 3 — núcleo do negócio
-  { weight: 3, q: '("refrigeração comercial" OR "câmara fria" OR "balcão refrigerado" OR "expositor refrigerado" OR "freezer comercial") when:14d' },
-  { weight: 3, q: '(equipamentos OR máquinas) (padaria OR açougue OR restaurante OR "food service") when:14d' },
+  { weight: 3, q: '("refrigeração comercial" OR "câmara fria" OR "balcão refrigerado" OR "expositor refrigerado" OR "freezer comercial") when:14d' , bing: ["câmara fria", "refrigeração comercial", "balcão refrigerado", "expositor refrigerado"] },
+  { weight: 3, q: '(equipamentos OR máquinas) (padaria OR açougue OR restaurante OR "food service") when:14d' , bing: ["equipamentos padaria", "equipamentos açougue", "equipamentos restaurante", "máquinas food service"] },
   // Peso 2 — clientes diretos, custos e regulação
-  { weight: 2, q: '("tarifa de energia" OR "conta de luz" OR "bandeira tarifária") (comércio OR supermercados OR restaurantes) when:7d' },
-  { weight: 2, q: '(padarias OR panificação OR confeitaria) (Abip OR faturamento OR mercado OR tendências) when:7d' },
-  { weight: 2, q: '(açougue OR frigorífico OR "carne bovina") (varejo OR mercado OR preço) when:7d' },
-  { weight: 2, q: '(bares OR restaurantes OR pizzarias OR lanchonetes) (Abrasel OR faturamento OR movimento) when:7d' },
-  { weight: 2, q: '("food service" OR foodservice) (mercado OR tendências OR investimento) when:7d' },
-  { weight: 2, q: '(supermercados OR atacarejo) (ABRAS OR vendas OR expansão) when:7d' },
-  { weight: 2, q: '(Alagoas OR Maceió) (restaurantes OR supermercados OR padarias OR bares) (faturamento OR vendas OR consumo OR mercado OR preço) when:7d' },
-  { weight: 2, q: '("vigilância sanitária" OR "segurança dos alimentos") (restaurantes OR açougues OR padarias) when:14d' },
+  { weight: 2, q: '("tarifa de energia" OR "conta de luz" OR "bandeira tarifária") (comércio OR supermercados OR restaurantes) when:7d' , bing: ["tarifa energia comércio", "bandeira tarifária comércio"] },
+  { weight: 2, q: '(padarias OR panificação OR confeitaria) (Abip OR faturamento OR mercado OR tendências) when:7d' , bing: ["padarias faturamento", "panificação mercado", "confeitaria mercado"] },
+  { weight: 2, q: '(açougue OR frigorífico OR "carne bovina") (varejo OR mercado OR preço) when:7d' , bing: ["açougue varejo carne", "frigorífico carne preço"] },
+  { weight: 2, q: '(bares OR restaurantes OR pizzarias OR lanchonetes) (Abrasel OR faturamento OR movimento) when:7d' , bing: ["bares restaurantes Abrasel", "restaurantes faturamento", "pizzarias lanchonetes mercado"] },
+  { weight: 2, q: '("food service" OR foodservice) (mercado OR tendências OR investimento) when:7d' , bing: ["food service mercado", "foodservice tendências"] },
+  { weight: 2, q: '(supermercados OR atacarejo) (ABRAS OR vendas OR expansão) when:7d' , bing: ["supermercados ABRAS vendas", "atacarejo expansão"] },
+  { weight: 2, q: '(Alagoas OR Maceió) (restaurantes OR supermercados OR padarias OR bares) (faturamento OR vendas OR consumo OR mercado OR preço) when:7d' , bing: ["Alagoas restaurantes consumo", "Maceió supermercados mercado"] },
+  { weight: 2, q: '("vigilância sanitária" OR "segurança dos alimentos") (restaurantes OR açougues OR padarias) when:14d' , bing: ["vigilância sanitária restaurantes", "segurança dos alimentos"] },
   // Peso 1 — contexto geral
-  { weight: 1, q: '(empreendedorismo OR "pequenas empresas") (alimentação OR comércio) when:14d' },
-  { weight: 1, q: '(Selic OR crédito OR financiamento) (equipamentos OR "pequenas empresas") when:14d' },
-  { weight: 1, q: '("consumo fora do lar" OR delivery OR iFood) when:7d' },
-  { weight: 1, q: 'inflação alimentos IPCA when:7d' },
+  { weight: 1, q: '(empreendedorismo OR "pequenas empresas") (alimentação OR comércio) when:14d' , bing: ["pequenas empresas alimentação"] },
+  { weight: 1, q: '(Selic OR crédito OR financiamento) (equipamentos OR "pequenas empresas") when:14d' , bing: ["crédito pequenas empresas equipamentos"] },
+  { weight: 1, q: '("consumo fora do lar" OR delivery OR iFood) when:7d' , bing: ["consumo fora do lar", "delivery iFood"] },
+  { weight: 1, q: 'inflação alimentos IPCA when:7d' , bing: ["inflação alimentos IPCA"] },
 ];
 
 // Concorrentes (conforme a Center Frios) + ruído comum.
@@ -39,6 +41,7 @@ export const DEFAULT_NEWS_EXCLUDE: string[] = [
   // Ruído recorrente (crime, acidentes, vagas, política local, fontes estrangeiras)
   "incêndio", "desaparec", "corpo de", "polícia", "preso", "assassin", "acidente", "morre",
   "vagas", "emprego", "vereador", "prefeitura", "restaurante popular", "vietnam", "inauguração do", "instagram.com", "refill", "ofertas",
+  "furto", "roubo", "trump", "rússia", "sanções", "gasolina", "vaquinha", "recomenda compra", "data center", "telecom", "investimentos diz", "cade",
 ];
 
 // Termos no título que indicam proximidade com o core e ganham bônus.
@@ -51,14 +54,14 @@ const CORE_TERMS = [
 
 const STRONG_TERMS = [
   "refrigera", "câmara fria", "camara fria", "balcão", "balcao", "expositor", "freezer", "equipamento",
-  "energia", "frigorífic", "frigorific", "food service", "foodservice", "atacarejo", "supermercado",
+  "frigorífic", "frigorific", "food service", "foodservice", "atacarejo", "supermercado",
 ];
 
 // Além dos termos acima, aceita contexto de negócio/mercado (evita manchetes soltas).
 const CONTEXT_TERMS = [
-  "varejo", "consumo", "inflação", "selic", "tarifa", "abrasel", "abip", "abras",
+  "varejo", "consumo", "inflação", "selic", "tarifa de energia", "abrasel", "abip", "abras",
   "faturamento", "food", "franquia", "delivery", "ifood", "sanitária", "empreend", "pequenas empresas",
-  "preço", "mercado",
+  "preço", "conta de luz", "energia elétrica", "bandeira",
 ];
 
 export function norm(s: string): string {
@@ -80,13 +83,27 @@ export function buildNewsUrl(q: string): string {
 }
 
 // Fallback: Bing News RSS (o Google costuma bloquear/limitar IPs de datacenter).
-export function buildBingNewsUrl(q: string): string {
-  // Bing não entende "when:14d": remove o operador de recência.
-  const clean = q.replace(/\swhen:\d+[dhm]/gi, "");
+// Simplifica consultas no formato Google: tira "when:", aspas/parênteses e fica com a 1ª
+// alternativa de cada grupo OR.
+export function simplifyForBing(q: string): string {
+  const noWhen = q.replace(/\swhen:\d+[dhm]/gi, "");
+  const parts: string[] = [];
+  const re = /\(([^)]*)\)|"([^"]*)"|([^\s()"]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(noWhen))) {
+    if (m[1] !== undefined) parts.push(m[1].split(/\s+OR\s+/i)[0].replace(/"/g, ""));
+    else if (m[2] !== undefined) parts.push(m[2]);
+    else if (m[3].toUpperCase() !== "OR") parts.push(m[3]);
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function buildBingNewsUrl(simpleQuery: string): string {
+  // qft: ordena por data e limita à última semana.
   return (
     "https://www.bing.com/news/search?q=" +
-    encodeURIComponent(clean) +
-    "&format=rss&setlang=pt-BR&cc=BR&mkt=pt-BR"
+    encodeURIComponent(simpleQuery) +
+    "&format=rss&setlang=pt-BR&cc=BR&mkt=pt-BR&qft=sortbydate%3d%221%22+interval%3d%228%22"
   );
 }
 
@@ -179,6 +196,7 @@ export function rankHeadlines(
   const pool: (NewsHeadline & { tk: Set<string> })[] = [];
   for (const b of batches) {
     for (const it of b.items) {
+      if (it.publishedAt && now - Date.parse(it.publishedAt) > 14 * 24 * 36e5) continue;
       const hay = norm(it.title + " " + it.source);
       if (ex.some((e) => hay.includes(e))) continue;
       const ageH = it.publishedAt ? Math.max(0, (now - Date.parse(it.publishedAt)) / 36e5) : 168;
