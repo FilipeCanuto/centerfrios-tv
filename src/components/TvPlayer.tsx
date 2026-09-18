@@ -1723,8 +1723,9 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
       try {
         // Frankfurter (BCE, sem chave, sem limite de uso perceptível) em vez da
         // AwesomeAPI. Pede BRL->USD/EUR e inverte (1/taxa) pra exibir quantos
-        // BRL valem 1 USD / 1 EUR.
-        const res = await fetch("https://api.frankfurter.app/latest?from=BRL&to=USD,EUR");
+        // BRL valem 1 USD / 1 EUR. .dev direto (nao .app, que faz redirect
+        // 301) -- Silk/Fire OS não segue bem redirect cross-origin em fetch().
+        const res = await fetch("https://api.frankfurter.dev/v1/latest?from=BRL&to=USD,EUR");
         const data = await res.json();
         if (stop) return;
         const u = data?.rates?.USD ? 1 / data.rates.USD : NaN;

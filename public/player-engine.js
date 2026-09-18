@@ -489,7 +489,9 @@
     // AwesomeAPI -- essa vinha batendo "limite de uso atingido" para o IP
     // compartilhado da Lovable. Pede BRL->USD/EUR e inverte (1/taxa) pra
     // exibir quantos BRL valem 1 USD / 1 EUR, que é o que faz sentido aqui.
-    httpGetJson("https://api.frankfurter.app/latest?from=BRL&to=USD,EUR", function (err, data) {
+    // .dev direto (nao .app, que faz redirect 301) -- Silk/Fire OS nao segue
+    // bem redirect cross-origin em fetch(), a cotacao ficava sem atualizar.
+    httpGetJson("https://api.frankfurter.dev/v1/latest?from=BRL&to=USD,EUR", function (err, data) {
       if (err || !data || !data.rates) return; // mantém o último valor exibido
       var usd = data.rates.USD ? 1 / data.rates.USD : 0;
       var eur = data.rates.EUR ? 1 / data.rates.EUR : 0;
