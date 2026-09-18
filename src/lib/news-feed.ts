@@ -79,6 +79,17 @@ export function buildNewsUrl(q: string): string {
   );
 }
 
+// Fallback: Bing News RSS (o Google costuma bloquear/limitar IPs de datacenter).
+export function buildBingNewsUrl(q: string): string {
+  // Bing não entende "when:14d": remove o operador de recência.
+  const clean = q.replace(/\swhen:\d+[dhm]/gi, "");
+  return (
+    "https://www.bing.com/news/search?q=" +
+    encodeURIComponent(clean) +
+    "&format=rss&setlang=pt-BR&cc=BR&mkt=pt-BR"
+  );
+}
+
 // Linhas "peso|consulta" (peso 1-3, opcional; padrão 2).
 export function parseQueryLines(text: string | null | undefined): NewsQuery[] {
   const out: NewsQuery[] = [];
@@ -121,7 +132,7 @@ export function parseRss(xml: string): Omit<NewsHeadline, "score">[] {
   while ((m = re.exec(xml))) {
     const block = m[1];
     let title = tag(block, "title");
-    let source = tag(block, "source");
+    let source = tag(block, "source") || tag(block, "News:Source");
     // Google News: "Manchete - Fonte"
     if (source && title.endsWith(" - " + source)) title = title.slice(0, -(source.length + 3));
     else if (!source) {
