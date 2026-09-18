@@ -20,8 +20,12 @@
     "show_presence_qr,presence_qr_position,presence_logo_size," +
     "show_weather,show_currency";
 
-  var WEATHER_MS = 15 * 60 * 1000;
-  var CURRENCY_MS = 15 * 60 * 1000;
+  /* Intervalo mínimo praticável sem abusar de APIs públicas gratuitas.
+     Open-Meteo atualiza a fonte ~1x/hora e o Banco Central Europeu (cotação)
+     ~1x/dia -- consultar mais rápido que isso não traz dado mais novo, só
+     garante que a tela pegue a atualização assim que ela sai. */
+  var WEATHER_MS = 60 * 1000;
+  var CURRENCY_MS = 60 * 1000;
 
   var POLL_MS = 5000;        // estado da TV
   var HEARTBEAT_MS = 45000;  // fire-and-forget, NUNCA lido de volta
@@ -73,7 +77,7 @@
   var ytA = { el: $("yt-a"), holder: "yt-a-inner", player: null, videoId: "", ready: false, h: null };
   var ytB = { el: $("yt-b"), holder: "yt-b-inner", player: null, videoId: "", ready: false, h: null };
   var activeYt = ytA, idleYt = ytB;
-  var timers = { item: null, stall: null, hard: null, canplay: null };
+  var timers = { item: null, stall: null, hard: null, canplay: null, ytpoll: null };
   var lastSignature = "";
   var lastTvSig = "";
   var lastAlertId = "";
@@ -100,7 +104,7 @@
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
   function showEl(el, on) { el.style.display = on ? "block" : "none"; }
   function clearTimer(name) { if (timers[name]) { clearTimeout(timers[name]); timers[name] = null; } }
-  function clearAllTimers() { clearTimer("item"); clearTimer("stall"); clearTimer("hard"); clearTimer("canplay"); }
+  function clearAllTimers() { clearTimer("item"); clearTimer("stall"); clearTimer("hard"); clearTimer("canplay"); clearTimer("ytpoll"); }
   function diag(msg) { diagEl.innerHTML = msg || ""; }
 
   function cookieGet(name) {
@@ -1052,6 +1056,20 @@
       crossfade(slot.el, [other.el, activeVideo, idleVideo, activeImg, idleImg]);
       activeYt = slot; idleYt = other;
       preloadNext();
+      /* Rede de segurança: em alguns Fire TV Stick/Silk o postMessage de
+         onStateChange(ENDED) as vezes nao chega (o iframe do YouTube fica
+         parado na tela de "replay" e o player nunca avanca). getPlayerState()
+         e uma leitura direta do objeto, nao depende do evento chegar --
+         confere a cada 2s como um fallback independente do listener. */
+      clearTimer("ytpoll");
+      timers.ytpoll = setInterval(function () {
+        if (my !== token) { clearTimer("ytpoll"); return; }
+        var st = window.YT && window.YT.PlayerState;
+        if (!st || !slot.player) return;
+        try {
+          if (slot.player.getPlayerState() === st.ENDED) { clearTimer("ytpoll"); advance(); }
+        } catch (e) {}
+      }, 2000);
     }
 
     slot.h = {

@@ -33,12 +33,18 @@ const MANIFEST_KEY = "playlist";
 const HEARTBEAT_MS = 8000;
 const METADATA_GUARD_MS = 20000;
 const FADE_MS = 200;
+/* Intervalo mínimo praticável sem abusar de APIs públicas gratuitas.
+   Open-Meteo atualiza a fonte ~1x/hora e o Banco Central Europeu (cotação)
+   ~1x/dia -- consultar mais rápido que isso não traz dado mais novo, só
+   garante que a tela pegue a atualização assim que ela sai. */
+const INFOBAR_REFRESH_MS = 60 * 1000;
 
 type YTPlayerInstance = {
   mute: () => void;
   unMute: () => void;
   setVolume: (v: number) => void;
   getDuration: () => number;
+  getPlayerState: () => number;
   destroy: () => void;
 };
 type YTNamespace = {
@@ -1395,6 +1401,36 @@ function YoutubeLayer({
   useEffect(() => {
     let cancelled = false;
     let player: YTPlayerInstance | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let ended = false;
+
+    function clearPoll() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    // Rede de segurança: em alguns Fire TV Stick/Silk o postMessage de
+    // onStateChange(ENDED) às vezes não chega (o iframe fica parado na tela
+    // de "replay" e o player nunca avança). getPlayerState() é uma leitura
+    // direta do objeto, não depende do evento chegar — confere a cada 2s
+    // como fallback independente do listener.
+    function armPoll(YT: YTNamespace) {
+      clearPoll();
+      pollTimer = setInterval(() => {
+        if (cancelled || ended || !player) return;
+        try {
+          if (player.getPlayerState() === YT.PlayerState.ENDED) {
+            ended = true;
+            clearPoll();
+            if (onEnded) onEnded();
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 2000);
+    }
 
     loadYoutubeIframeApi().then((YT) => {
       if (cancelled || !containerRef.current) return;
@@ -1424,10 +1460,13 @@ function YoutubeLayer({
             } catch {
               /* ignore */
             }
+            armPoll(YT);
           },
           onStateChange: (e) => {
             if (cancelled) return;
             if (e.data === YT.PlayerState.ENDED) {
+              ended = true;
+              clearPoll();
               if (onEnded) onEnded();
             } else if (e.data === YT.PlayerState.PLAYING) {
               if (onResume) onResume();
@@ -1446,6 +1485,7 @@ function YoutubeLayer({
 
     return () => {
       cancelled = true;
+      clearPoll();
       playerRef.current = null;
       if (player) {
         try {
@@ -1709,7 +1749,7 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
       }
     }
     load();
-    const t = setInterval(load, 15 * 60 * 1000);
+    const t = setInterval(load, INFOBAR_REFRESH_MS);
     return () => {
       stop = true;
       clearInterval(t);
@@ -1737,7 +1777,7 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
       }
     }
     load();
-    const t = setInterval(load, 15 * 60 * 1000);
+    const t = setInterval(load, INFOBAR_REFRESH_MS);
     return () => {
       stop = true;
       clearInterval(t);
