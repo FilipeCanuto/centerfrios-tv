@@ -50,7 +50,7 @@
   var imgA = $("img-a"), imgB = $("img-b");
   var liveImg = $("live-img"), liveTag = $("livetag");
   var tickerEl = $("ticker"), tickerText = $("ticker-text"), tickerNews = $("ticker-news"),
-    tickerBadge = $("ticker-badge"), tickerTrack = $("ticker-track");
+    tickerBadge = $("ticker-badge"), tickerTrack = $("ticker-track"), tickerClock = $("ticker-clock");
   var cornerEl = $("corner"), cornerQr = $("corner-qr");
   var sponsorsEl = $("sponsors"), sponsorsList = $("sponsors-list");
   var presenceEl = $("presence"), presenceQr = $("presence-qr");
@@ -599,6 +599,8 @@
       tickerText.style.display = useNews ? "none" : "inline-block";
       tickerBadge.style.display = useNews ? "block" : "none";
       tickerTrack.style.display = useNews ? "block" : "none";
+      tickerClock.style.display = useNews ? "block" : "none";
+      if (useNews) updateNewsClock();
       tickerEl.className = useNews ? "pro" : "";
       tickerNewsKey = "";
     }
@@ -618,6 +620,12 @@
     tickerNews.style.webkitAnimationDuration = dur + "s";
     tickerNews.style.animationDuration = dur + "s";
   }
+
+  function updateNewsClock() {
+    var d = new Date(), hh = d.getHours(), mm = d.getMinutes();
+    tickerClock.innerHTML = (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
+  }
+  setInterval(function () { if (tickerMode === "news") updateNewsClock(); }, 15000);
 
   function loadNews() {
     if (!newsOn()) return;

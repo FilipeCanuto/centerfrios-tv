@@ -1117,10 +1117,10 @@ export function TvPlayer() {
                 backgroundColor: "#0A3981",
                 ...(newsItems.length
                   ? {
-                      background: "linear-gradient(90deg,#061a42,#0A3981 55%,#0c4aa6)",
-                      borderTop: tickerPosition === "top" ? undefined : "3px solid #FFC700",
-                      borderBottom: tickerPosition === "top" ? "3px solid #FFC700" : undefined,
-                      boxShadow: "0 0 30px rgba(0,0,0,0.45)",
+                      background: "linear-gradient(180deg,#ffffff,#d9dfe8)",
+                      borderTop: tickerPosition === "top" ? undefined : "4px solid #0A3981",
+                      borderBottom: tickerPosition === "top" ? "4px solid #0A3981" : undefined,
+                      boxShadow: "0 0 30px rgba(0,0,0,0.5)",
                     }
                   : {}),
                 color: "#FFFFFF",
@@ -1903,11 +1903,23 @@ function PresenceQr({ position }: { position: string }) {
   );
 }
 
-// Rodapé estilo canal de notícias: selo fixo à esquerda + faixa rolando (direita → esquerda) sem emenda.
-// O conteúdo é duplicado e animado até -50%; a duração vem da largura real (~140 px/s).
+// Rodapé "CENTERNEWS" (estilo telejornal): selo azul à esquerda, faixa prata com manchetes rolando
+// (direita → esquerda, sem emenda) e relógio à direita. Conteúdo duplicado e animado até -50%;
+// duração pela largura real (~140 px/s).
+const NEWS_PANEL: React.CSSProperties = {
+  alignSelf: "stretch",
+  zIndex: 3,
+  boxSizing: "border-box",
+  whiteSpace: "nowrap",
+  lineHeight: "82px",
+  color: "#FFFFFF",
+  background: "linear-gradient(180deg,#0c4aa6,#0A3981 60%,#072a63)",
+};
+
 function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [dur, setDur] = useState(120);
+  const [clock, setClock] = useState(() => hhmm());
   const key = items.map((i) => i.text + "|" + i.source).join("¦");
   useEffect(() => {
     const el = ref.current;
@@ -1915,25 +1927,41 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
     const half = el.scrollWidth / 2;
     if (half > 0) setDur(Math.max(30, Math.round(half / 140)));
   }, [key]);
+  useEffect(() => {
+    const t = setInterval(() => setClock(hhmm()), 15000);
+    return () => clearInterval(t);
+  }, []);
   const row = (suffix: string) =>
     items.map((it, i) => (
       <span key={suffix + i} style={{ display: "inline-flex", alignItems: "center" }}>
-        <span style={{ color: it.promo ? "#FFC700" : "#FFFFFF", fontWeight: it.promo ? 700 : 600 }}>
-          {it.text}
-        </span>
+        {it.promo ? (
+          <span
+            style={{
+              background: "#0A3981",
+              color: "#FFC700",
+              padding: "0 18px",
+              lineHeight: "52px",
+              borderRadius: "6px",
+            }}
+          >
+            {it.text}
+          </span>
+        ) : (
+          <span style={{ color: "#0A2A66" }}>{it.text}</span>
+        )}
         {it.source ? (
           <span
             style={{
               marginLeft: "18px",
-              padding: "0 12px",
-              lineHeight: "32px",
+              padding: "0 14px",
+              lineHeight: "34px",
               fontSize: "19px",
               fontWeight: 700,
               letterSpacing: "2px",
               textTransform: "uppercase",
-              color: "#FFC700",
-              border: "1.5px solid rgba(255,199,0,0.55)",
-              borderRadius: "6px",
+              color: "#FFFFFF",
+              background: "#0A3981",
+              borderRadius: "4px",
             }}
           >
             {it.source}
@@ -1941,10 +1969,12 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
         ) : null}
         <span
           style={{
-            width: "2px",
-            height: "34px",
+            width: "14px",
+            height: "14px",
             margin: "0 46px",
-            background: "rgba(255,255,255,0.28)",
+            background: "#FFC700",
+            border: "2px solid #0A3981",
+            transform: "rotate(45deg)",
           }}
         />
       </span>
@@ -1953,33 +1983,38 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
     <>
       <div
         style={{
-          flex: "0 0 280px",
-          alignSelf: "stretch",
-          zIndex: 3,
-          boxSizing: "border-box",
-          padding: "8px 40px 0 26px",
-          background: "#FFC700",
-          color: "#0A3981",
-          clipPath: "polygon(0 0,100% 0,calc(100% - 26px) 100%,0 100%)",
+          ...NEWS_PANEL,
+          flex: "0 0 350px",
+          padding: "0 50px 0 24px",
+          fontSize: "36px",
+          fontWeight: 900,
+          letterSpacing: "1px",
+          clipPath: "polygon(0 0,100% 0,calc(100% - 30px) 100%,0 100%)",
         }}
       >
-        <div style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "4px", opacity: 0.85, lineHeight: "20px" }}>
-          CENTERFRIOS
-        </div>
-        <div style={{ fontSize: "32px", fontWeight: 900, letterSpacing: "2px", lineHeight: "36px" }}>
-          NOTÍCIAS
-        </div>
+        CENTER<span style={{ color: "#FFC700" }}>NEWS</span>
       </div>
-      <div style={{ position: "relative", flex: 1, alignSelf: "stretch", overflow: "hidden", marginLeft: "-10px" }}>
+      <div style={{ position: "relative", flex: 1, alignSelf: "stretch", overflow: "hidden", marginLeft: "-20px" }}>
         <div
           style={{
             position: "absolute",
             left: 0,
             top: 0,
             bottom: 0,
-            width: "70px",
+            width: "50px",
             zIndex: 2,
-            background: "linear-gradient(90deg,#0A3981,rgba(10,57,129,0))",
+            background: "linear-gradient(90deg,#f1f3f7,rgba(241,243,247,0))",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: "50px",
+            zIndex: 2,
+            background: "linear-gradient(270deg,#e6eaf0,rgba(230,234,240,0))",
           }}
         />
         <div
@@ -1988,9 +2023,8 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           style={{
             height: "100%",
             alignItems: "center",
-            fontSize: "36px",
-            fontWeight: 600,
-            letterSpacing: "0.3px",
+            fontSize: "38px",
+            fontWeight: 800,
             animationDuration: dur + "s",
           }}
         >
@@ -1998,6 +2032,25 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           {row("b")}
         </div>
       </div>
+      <div
+        style={{
+          ...NEWS_PANEL,
+          flex: "0 0 190px",
+          marginLeft: "-20px",
+          padding: "0 22px 0 52px",
+          fontSize: "38px",
+          fontWeight: 700,
+          textAlign: "right",
+          clipPath: "polygon(30px 0,100% 0,100% 100%,0 100%)",
+        }}
+      >
+        {clock}
+      </div>
     </>
   );
+}
+
+function hhmm(): string {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }

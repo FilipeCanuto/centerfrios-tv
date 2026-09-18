@@ -28,24 +28,30 @@
     -webkit-animation:cfmarq 24s linear infinite; animation:cfmarq 24s linear infinite; }
   @-webkit-keyframes cfmarq { 0%{-webkit-transform:translateX(100%);} 100%{-webkit-transform:translateX(-100%);} }
   @keyframes cfmarq { 0%{transform:translateX(100%);} 100%{transform:translateX(-100%);} }
-  #ticker.pro { background:-webkit-linear-gradient(left,#061a42,#0A3981 55%,#0c4aa6); background:linear-gradient(90deg,#061a42,#0A3981 55%,#0c4aa6);
-    border-top:3px solid #FFC700; box-sizing:border-box; box-shadow:0 -8px 30px rgba(0,0,0,.45); }
-  #ticker-badge { display:none; position:absolute; left:0; top:0; bottom:0; width:280px; z-index:3; box-sizing:border-box;
-    padding:8px 40px 0 26px; background:#FFC700; color:#0A3981; white-space:normal;
-    -webkit-clip-path:polygon(0 0,100% 0,calc(100% - 26px) 100%,0 100%); clip-path:polygon(0 0,100% 0,calc(100% - 26px) 100%,0 100%); }
-  #ticker-badge .b1 { font-size:15px; font-weight:bold; letter-spacing:4px; opacity:.85; line-height:20px; }
-  #ticker-badge .b2 { font-size:32px; font-weight:900; letter-spacing:2px; line-height:36px; }
-  #ticker-track { display:none; position:absolute; left:270px; right:0; top:0; bottom:0; overflow:hidden; }
-  #ticker-fade { position:absolute; left:0; top:0; bottom:0; width:70px; z-index:2;
-    background:-webkit-linear-gradient(left,#0A3981,rgba(10,57,129,0)); background:linear-gradient(90deg,#0A3981,rgba(10,57,129,0)); }
-  #ticker-news { display:inline-block; white-space:nowrap; line-height:84px; font-size:36px; font-weight:600; letter-spacing:.3px;
+  #ticker.pro { background:-webkit-linear-gradient(top,#ffffff,#d9dfe8); background:linear-gradient(180deg,#ffffff,#d9dfe8);
+    border-top:4px solid #0A3981; box-sizing:border-box; box-shadow:0 -8px 30px rgba(0,0,0,.5); }
+  #ticker-badge { display:none; position:absolute; left:0; top:0; bottom:0; width:350px; z-index:3; box-sizing:border-box;
+    padding:0 50px 0 24px; white-space:nowrap; line-height:82px; font-size:36px; font-weight:900; letter-spacing:1px; color:#fff;
+    background:-webkit-linear-gradient(top,#0c4aa6,#0A3981 60%,#072a63); background:linear-gradient(180deg,#0c4aa6,#0A3981 60%,#072a63);
+    -webkit-clip-path:polygon(0 0,100% 0,calc(100% - 30px) 100%,0 100%); clip-path:polygon(0 0,100% 0,calc(100% - 30px) 100%,0 100%); }
+  #ticker-badge .c2 { color:#FFC700; }
+  #ticker-clock { display:none; position:absolute; right:0; top:0; bottom:0; width:190px; z-index:3; box-sizing:border-box;
+    padding:0 22px 0 52px; white-space:nowrap; line-height:82px; font-size:38px; font-weight:bold; color:#fff; text-align:right;
+    background:-webkit-linear-gradient(top,#0c4aa6,#0A3981 60%,#072a63); background:linear-gradient(180deg,#0c4aa6,#0A3981 60%,#072a63);
+    -webkit-clip-path:polygon(30px 0,100% 0,100% 100%,0 100%); clip-path:polygon(30px 0,100% 0,100% 100%,0 100%); }
+  #ticker-track { display:none; position:absolute; left:330px; right:170px; top:0; bottom:0; overflow:hidden; }
+  #ticker-fade, #ticker-fade2 { position:absolute; top:0; bottom:0; width:50px; z-index:2; }
+  #ticker-fade { left:0; background:-webkit-linear-gradient(left,#f1f3f7,rgba(241,243,247,0)); background:linear-gradient(90deg,#f1f3f7,rgba(241,243,247,0)); }
+  #ticker-fade2 { right:0; background:-webkit-linear-gradient(right,#e6eaf0,rgba(230,234,240,0)); background:linear-gradient(270deg,#e6eaf0,rgba(230,234,240,0)); }
+  #ticker-news { display:inline-block; white-space:nowrap; line-height:82px; font-size:38px; font-weight:800; letter-spacing:.2px;
     -webkit-animation:cfnews 120s linear infinite; animation:cfnews 120s linear infinite; }
   #ticker-news .ni { display:inline-block; vertical-align:middle; }
-  #ticker-news .nt { color:#fff; }
-  #ticker-news .np { color:#FFC700; font-weight:bold; }
-  #ticker-news .ns { display:inline-block; vertical-align:middle; margin-left:18px; padding:0 12px; line-height:32px; font-size:19px;
-    font-weight:bold; letter-spacing:2px; text-transform:uppercase; color:#FFC700; border:1.5px solid rgba(255,199,0,.55); border-radius:6px; }
-  #ticker-news .nd { display:inline-block; vertical-align:middle; width:2px; height:34px; margin:0 46px; background:rgba(255,255,255,.28); }
+  #ticker-news .nt { color:#0A2A66; }
+  #ticker-news .np { display:inline-block; background:#0A3981; color:#FFC700; padding:0 18px; line-height:52px; border-radius:6px; }
+  #ticker-news .ns { display:inline-block; vertical-align:middle; margin-left:18px; padding:0 14px; line-height:34px; font-size:19px;
+    font-weight:bold; letter-spacing:2px; text-transform:uppercase; color:#fff; background:#0A3981; border-radius:4px; }
+  #ticker-news .nd { display:inline-block; vertical-align:middle; width:14px; height:14px; margin:0 46px; background:#FFC700;
+    border:2px solid #0A3981; -webkit-transform:rotate(45deg); transform:rotate(45deg); }
   @-webkit-keyframes cfnews { 0%{-webkit-transform:translateX(0);} 100%{-webkit-transform:translateX(-50%);} }
   @keyframes cfnews { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }
   #corner { position:absolute; display:none; background:rgba(10,57,129,.88); border-radius:16px;
@@ -109,7 +115,7 @@
       <img id="live-img" alt="">
     </div>
 
-    <div id="ticker"><span id="ticker-text"></span><div id="ticker-badge"><div class="b1">CENTERFRIOS</div><div class="b2">NOT&Iacute;CIAS</div></div><div id="ticker-track"><div id="ticker-fade"></div><span id="ticker-news"></span></div></div>
+    <div id="ticker"><span id="ticker-text"></span><div id="ticker-badge"><span class="c1">CENTER</span><span class="c2">NEWS</span></div><div id="ticker-track"><div id="ticker-fade"></div><div id="ticker-fade2"></div><span id="ticker-news"></span></div><div id="ticker-clock"></div></div>
     <div id="corner"><img class="logo" src="/logo.png" alt="CENTERFRIOS"><img class="qr" id="corner-qr" alt="" style="display:none"></div>
     <div id="sponsors"><span id="sponsors-list"></span></div>
     <div id="presence"><img id="presence-qr" alt="QR presença"><div>Confirme sua Presen&ccedil;a</div></div>
@@ -151,7 +157,7 @@
    NÃO usar hash de commit (dependência circular: hash só existe após o commit).
    Exemplo de atualização: v=20260901001516 → v=20260902120000
    Sem isso, browsers e TVs Fire OS servem a versão antiga em cache. */
-(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260918201916";document.head.appendChild(s);}());
+(function(){var s=document.createElement("script");s.src="/player-engine.js?v=20260918213205";document.head.appendChild(s);}());
 </script>
 </body>
 </html>
