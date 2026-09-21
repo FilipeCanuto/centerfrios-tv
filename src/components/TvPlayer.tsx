@@ -1112,7 +1112,11 @@ export function TvPlayer() {
               <img src={LOGO_URL} alt="CENTERFRIOS" style={{ height: logoHeight + "px" }} />
             ) : null}
             {qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code" style={{ height: "80px", width: "80px" }} />
+              <img
+                src={qrDataUrl}
+                alt="QR code"
+                style={{ height: (tv?.presence_logo_size || 96) + "px", width: (tv?.presence_logo_size || 96) + "px" }}
+              />
             ) : null}
           </div>
 

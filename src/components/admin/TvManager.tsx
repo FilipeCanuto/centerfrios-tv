@@ -378,7 +378,7 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                     <Input
                       id={"ticker-" + tv.id}
                       defaultValue={tv.ticker_text || ""}
-                      placeholder="Ofertas da semana em climatização!"
+                      placeholder="Frete grátis em todo o estado de Alagoas!"
                       onBlur={(e) => patchTv(tv.id, { ticker_text: e.target.value || null })}
                       className="h-10 rounded-xl"
                     />
@@ -454,9 +454,9 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Tamanho do logo/QR (presença)</Label>
+                    <Label className="text-xs">Tamanho do QR code</Label>
                     <Select
-                      value={String((tv as any).presence_logo_size || 96)}
+                      value={String(tv.presence_logo_size || 96)}
                       onValueChange={(v) => patchTv(tv.id, { presence_logo_size: parseInt(v, 10) })}
                     >
                       <SelectTrigger className="h-10 rounded-xl">

@@ -116,7 +116,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
       type PlaylistApiItem = {
         snippet?: { title?: string; resourceId?: { videoId?: string } };
       };
-      let data: { items?: PlaylistApiItem[]; error?: string } | null = null;
+      let data: { items?: PlaylistApiItem[]; error?: string; truncated?: boolean } | null = null;
       try {
         const res = await fetch(
           "/api/public/youtube-playlist?playlistId=" + encodeURIComponent(playlistId),
@@ -132,6 +132,9 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
         return;
       }
 
+      if (data.truncated) {
+        toast.info("Playlist muito grande: importando apenas os primeiros 300 vídeos");
+      }
       const rawItems = data.items || [];
       const items = rawItems
         .map((it) => ({

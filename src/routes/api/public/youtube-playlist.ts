@@ -24,8 +24,13 @@ export const Route = createFileRoute("/api/public/youtube-playlist")({
 
         try {
           // Pagina até 50 itens por chamada (máx. da API), juntando todas as páginas.
+          // Limite de páginas: uma playlist gigante (milhares de vídeos) travava a requisição
+          // por 40 s+ e gastava cota da API. 6 páginas = até 300 vídeos.
+          const MAX_PAGES = 6;
           const items: unknown[] = [];
           let pageToken = "";
+          let pages = 0;
+          let truncated = false;
           do {
             const url =
               "https://www.googleapis.com/youtube/v3/playlistItems" +
@@ -45,9 +50,14 @@ export const Route = createFileRoute("/api/public/youtube-playlist")({
             }
             items.push(...(data.items || []));
             pageToken = data.nextPageToken || "";
+            pages += 1;
+            if (pageToken && pages >= MAX_PAGES) {
+              truncated = true;
+              break;
+            }
           } while (pageToken);
 
-          return Response.json({ items });
+          return Response.json({ items, truncated });
         } catch (err) {
           return Response.json({ error: String(err) }, { status: 500 });
         }

@@ -71,6 +71,7 @@ export type TvRow = {
   presence_qr_position: string;
   show_weather: boolean;
   show_currency: boolean;
+  presence_logo_size: number | null;
   show_logo: boolean;
   logo_size: number;
   show_news_ticker: boolean;
@@ -131,7 +132,7 @@ export type AlertTemplate = {
 };
 
 export const TV_SELECT_COLUMNS =
-  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position,show_weather,show_currency";
+  "id,name,is_paired,playlist_id,is_live_active,last_ping,created_at,orientation,layout_mode,muted,ticker_text,qr_url,command,event_mode,volume,ticker_position,qr_position,media_fit,sponsors_enabled,countdown_label,countdown_ends_at,welcome_message,welcome_until,show_presence_qr,presence_qr_position,presence_logo_size,show_weather,show_currency";
 
 // Colunas do rodapé de notícias / logo (migration 20260918150000). Enquanto a migration
 // não foi aplicada no banco, a consulta com elas falha: use TV_SELECT_COLUMNS_LEGACY.

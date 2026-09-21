@@ -251,8 +251,9 @@
   function start() {
     if (started) return;
     started = true;
-    pollTv();
-    heartbeat();
+    /* try/catch: uma falha síncrona aqui não pode impedir o registro dos intervalos (o player pararia de sincronizar) */
+    try { pollTv(); } catch (e) {}
+    try { heartbeat(); } catch (e) {}
     setInterval(pollTv, POLL_MS);
     setInterval(heartbeat, HEARTBEAT_MS);
     setInterval(pollAlerts, ALERT_MS);

@@ -82,11 +82,18 @@ export function PlaylistManager() {
     return map;
   }, [media]);
 
+  const youtubeCount = useMemo(
+    () => (current ? current.items.filter((it) => byId[it.media_id]?.type === "youtube").length : 0),
+    [current, byId],
+  );
+
   const totalSeconds = useMemo(() => {
     if (!current) return 0;
     return current.items.reduce((acc, it) => {
       const m = byId[it.media_id];
       if (!m) return acc;
+      // YouTube toca até o fim (duração desconhecida): não entra na soma, só no aviso.
+      if (m.type === "youtube") return acc;
       if (m.type === "video") return acc + (it.custom_duration || m.duration || 30);
       return acc + (it.custom_duration || m.duration || 10);
     }, 0);
@@ -246,6 +253,9 @@ export function PlaylistManager() {
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-extrabold text-accent-foreground">
               <Clock className="h-3.5 w-3.5" />
               Duração total: {formatDuration(totalSeconds)}
+              {youtubeCount > 0
+                ? " + " + youtubeCount + (youtubeCount === 1 ? " vídeo do YouTube" : " vídeos do YouTube") + " (tocam até o fim)"
+                : ""}
             </p>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
