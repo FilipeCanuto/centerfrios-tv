@@ -826,13 +826,84 @@
       });
   }
 
+  /* ---------------- agenda por item (dias, horário, validade) ----------------
+     Guardada em playlists.items (JSONB): days [0-6, 0=domingo], start/end "HH:MM", from/until "AAAA-MM-DD".
+     Item sem agenda toca sempre. Falha ao ler a agenda = toca tudo (nunca deixa a tela vazia). */
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function itemActive(it) {
+    var sc = it && it.sched;
+    if (!sc) return true;
+    var d = new Date();
+    var today = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    if (sc.from && today < sc.from) return false;
+    if (sc.until && today > sc.until) return false;
+    if (sc.days && sc.days.length) {
+      var ok = false;
+      for (var i = 0; i < sc.days.length; i++) if (sc.days[i] === d.getDay()) ok = true;
+      if (!ok) return false;
+    }
+    if (sc.start || sc.end) {
+      var hm = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      var st = sc.start || "00:00", en = sc.end || "23:59";
+      if (st <= en) { if (hm < st || hm > en) return false; }
+      else if (hm < st && hm > en) return false; /* janela que cruza a meia-noite */
+    }
+    return true;
+  }
+  function pickIndex(from) {
+    for (var k = 0; k < items.length; k++) {
+      var j = (from + k) % items.length;
+      if (itemActive(items[j])) return j;
+    }
+    return -1;
+  }
+  function attachSched(list, playlistId, cb) {
+    if (!playlistId || !list.length) { cb(); return; }
+    req("GET", "/rest/v1/playlists?id=eq." + playlistId + "&select=items", null, function (err, pls) {
+      try {
+        if (!err && pls && pls.length && pls[0].items && pls[0].items.length) {
+          var src = pls[0].items.slice(0);
+          src.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+          var used = {};
+          for (var i = 0; i < list.length; i++) {
+            for (var k = 0; k < src.length; k++) {
+              var sr = src[k];
+              if (used[k] || !sr || sr.media_id !== list[i].media_id) continue;
+              used[k] = true;
+              if ((sr.days && sr.days.length) || sr.start || sr.end || sr.from || sr.until) {
+                list[i].sched = { days: sr.days || null, start: sr.start || null, end: sr.end || null, from: sr.from || null, until: sr.until || null };
+              }
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+      cb();
+    });
+  }
+  var schedTimer = null;
+  function failsafeNoItem() {
+    /* nenhum item programado para este horário: tela institucional e nova checagem em 20 s */
+    clearAllTimers(); token++;
+    emptyMsg.innerHTML = "CENTERFRIOS &mdash; Crescendo com voc&ecirc;";
+    emptyCode.innerHTML = "";
+    screenMode("empty");
+    timers.item = setTimeout(function () {
+      var n = pickIndex(0);
+      if (n < 0) { failsafeNoItem(); return; }
+      idx = n; screenMode(""); render();
+    }, 20000);
+  }
+
   /* ---------------- playlist (RPC + fallback direto) ---------------- */
   function loadPlaylist(playlistId, eventMode) {
     var resolved = [];
 
     function finish() {
-      if (eventMode) { appendEventPhotos(resolved, apply); return; }
-      apply();
+      attachSched(resolved, playlistId, function () {
+        if (eventMode) { appendEventPhotos(resolved, apply); return; }
+        apply();
+      });
     }
 
     function apply() {
@@ -848,7 +919,7 @@
       }
       var sig = "";
       for (var i = 0; i < resolved.length; i++) {
-        sig += resolved[i].media_id + "|" + resolved[i].url + "|" + resolved[i].duration + ",";
+        sig += resolved[i].media_id + "|" + resolved[i].url + "|" + resolved[i].duration + "|" + (resolved[i].sched ? JSON.stringify(resolved[i].sched) : "") + ",";
       }
       // conteúdo idêntico -> NÃO reinicia a reprodução (evita flashes)
       if (sig === lastSignature) { if (!playing) startLoop(); return; }
@@ -946,7 +1017,9 @@
 
   function advance() {
     if (!playing || isLive) return;
-    idx = (idx + 1) % items.length;
+    var n = pickIndex(idx + 1);
+    if (n < 0) { failsafeNoItem(); return; }
+    idx = n;
     render();
   }
 
@@ -956,6 +1029,11 @@
     token++;
     var my = token;
     var item = items[idx % items.length];
+    if (item && !itemActive(item)) {
+      var pn = pickIndex(idx + 1);
+      if (pn < 0) { failsafeNoItem(); return; }
+      idx = pn; item = items[idx];
+    }
     if (!item || !item.url) { scheduleFail(); return; }
 
     updateCornerQr();

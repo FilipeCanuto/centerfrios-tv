@@ -25,7 +25,17 @@ export type PlaylistItem = {
   media_id: string;
   order: number;
   custom_duration?: number | null;
+  // Agenda opcional (sem agenda = toca sempre). days: 0=domingo..6=sábado.
+  days?: number[] | null;
+  start?: string | null; // "HH:MM"
+  end?: string | null; // "HH:MM" (janela pode cruzar a meia-noite)
+  from?: string | null; // "AAAA-MM-DD"
+  until?: string | null; // "AAAA-MM-DD"
 };
+
+export function hasSchedule(it: PlaylistItem): boolean {
+  return !!((it.days && it.days.length) || it.start || it.end || it.from || it.until);
+}
 
 export type PlaylistRow = {
   id: string;
@@ -177,6 +187,13 @@ export function parsePlaylistItems(items: unknown): PlaylistItem[] {
         order: typeof raw.order === "number" ? raw.order : i,
         custom_duration:
           typeof raw.custom_duration === "number" ? raw.custom_duration : null,
+        ...(Array.isArray(raw.days) && raw.days.length
+          ? { days: (raw.days as unknown[]).filter((d) => typeof d === "number") as number[] }
+          : {}),
+        ...(typeof raw.start === "string" && raw.start ? { start: raw.start } : {}),
+        ...(typeof raw.end === "string" && raw.end ? { end: raw.end } : {}),
+        ...(typeof raw.from === "string" && raw.from ? { from: raw.from } : {}),
+        ...(typeof raw.until === "string" && raw.until ? { until: raw.until } : {}),
       });
     }
   }

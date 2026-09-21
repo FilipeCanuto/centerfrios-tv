@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   formatDuration,
+  hasSchedule,
   parsePlaylistItems,
   type MediaRow,
   type PlaylistItem,
@@ -150,6 +151,24 @@ export function PlaylistManager() {
     persist(items);
   }
 
+  function setSchedAt(index: number, patch: Partial<PlaylistItem> | null) {
+    if (!current) return;
+    const items = current.items.slice();
+    const base: PlaylistItem = {
+      media_id: items[index].media_id,
+      order: items[index].order,
+      custom_duration: items[index].custom_duration ?? null,
+    };
+    // patch null = limpa a agenda; senão mescla e remove campos vazios
+    const merged: Record<string, unknown> = patch === null ? base : { ...items[index], ...patch };
+    ["days", "start", "end", "from", "until"].forEach((k) => {
+      const v = merged[k];
+      if (v === null || v === "" || (Array.isArray(v) && v.length === 0)) delete merged[k];
+    });
+    items[index] = merged as unknown as PlaylistItem;
+    persist(items);
+  }
+
   function onDragEnd(event: DragEndEvent) {
     if (!current) return;
     const { active, over } = event;
@@ -272,6 +291,7 @@ export function PlaylistManager() {
                       item={it}
                       media={byId[it.media_id]}
                       onDuration={(v) => setDurationAt(i, v)}
+                      onSched={(v) => setSchedAt(i, v)}
                       onRemove={() => removeAt(i)}
                     />
                   ))}
@@ -375,6 +395,7 @@ function SortableRow({
   item,
   media,
   onDuration,
+  onSched,
   onRemove,
 }: {
   id: string;
@@ -382,8 +403,11 @@ function SortableRow({
   item: PlaylistItem;
   media?: MediaRow;
   onDuration: (value: number | null) => void;
+  onSched: (patch: Partial<PlaylistItem> | null) => void;
   onRemove: () => void;
 }) {
+  const [schedOpen, setSchedOpen] = useState(false);
+  const scheduled = hasSchedule(item);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
   });
@@ -393,7 +417,7 @@ function SortableRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={
-        "flex items-center gap-2 rounded-xl border bg-secondary/40 p-2 " +
+        "flex flex-wrap items-center gap-2 rounded-xl border bg-secondary/40 p-2 " +
         (isDragging ? "border-primary shadow-lg" : "border-border")
       }
     >
@@ -447,6 +471,19 @@ function SortableRow({
         <Button
           size="icon"
           variant="ghost"
+          aria-label="Agenda do item"
+          title="Agenda: dias, horário e validade"
+          className={
+            "h-8 w-8 rounded-lg " +
+            (scheduled ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-primary")
+          }
+          onClick={() => setSchedOpen((v) => !v)}
+        >
+          <Clock className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
           aria-label="Remover da playlist"
           className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           onClick={onRemove}
@@ -454,7 +491,99 @@ function SortableRow({
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
+      {schedOpen ? <SchedEditor item={item} onSched={onSched} /> : null}
     </li>
+  );
+}
+
+const WEEK = ["D", "S", "T", "Q", "Q", "S", "S"];
+
+function SchedEditor({
+  item,
+  onSched,
+}: {
+  item: PlaylistItem;
+  onSched: (patch: Partial<PlaylistItem> | null) => void;
+}) {
+  const days = item.days || [];
+  return (
+    <div className="basis-full space-y-2 rounded-lg border border-border bg-background p-2 text-xs">
+      <p className="font-semibold text-muted-foreground">
+        Agenda deste item — vazio = toca sempre. Fora da agenda ele é pulado; se nada estiver
+        programado, a TV mostra a tela institucional.
+      </p>
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 font-bold">Dias:</span>
+        {WEEK.map((label, d) => (
+          <button
+            key={d}
+            type="button"
+            aria-label={"Dia " + d}
+            onClick={() =>
+              onSched({ days: days.includes(d) ? days.filter((x) => x !== d) : days.concat([d]).sort() })
+            }
+            className={
+              "h-7 w-7 rounded-md text-[11px] font-bold " +
+              (days.includes(d)
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-primary/20")
+            }
+          >
+            {label}
+          </button>
+        ))}
+        <span className="ml-1 text-muted-foreground">(nenhum marcado = todos os dias)</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 font-bold">
+          Das
+          <Input
+            type="time"
+            aria-label="Hora inicial"
+            className="h-8 w-28 rounded-lg"
+            value={item.start || ""}
+            onChange={(e) => onSched({ start: e.target.value || null })}
+          />
+        </label>
+        <label className="flex items-center gap-1 font-bold">
+          às
+          <Input
+            type="time"
+            aria-label="Hora final"
+            className="h-8 w-28 rounded-lg"
+            value={item.end || ""}
+            onChange={(e) => onSched({ end: e.target.value || null })}
+          />
+        </label>
+        <label className="flex items-center gap-1 font-bold">
+          Válido de
+          <Input
+            type="date"
+            aria-label="Válido a partir de"
+            className="h-8 w-36 rounded-lg"
+            value={item.from || ""}
+            onChange={(e) => onSched({ from: e.target.value || null })}
+          />
+        </label>
+        <label className="flex items-center gap-1 font-bold">
+          até
+          <Input
+            type="date"
+            aria-label="Válido até"
+            className="h-8 w-36 rounded-lg"
+            value={item.until || ""}
+            onChange={(e) => onSched({ until: e.target.value || null })}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => onSched(null)}
+          className="rounded-md bg-muted px-2 py-1 font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          Limpar agenda
+        </button>
+      </div>
+    </div>
   );
 }
 
