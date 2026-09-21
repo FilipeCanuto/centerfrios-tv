@@ -8,6 +8,7 @@ import {
   type PlaylistItem,
 } from "@/lib/centerfrios";
 import { parseYoutubeId } from "@/components/admin/MediaManager";
+import { PlayReport } from "@/components/admin/PlayReport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -385,6 +386,7 @@ export function PlaylistManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <PlayReport />
     </div>
   );
 }

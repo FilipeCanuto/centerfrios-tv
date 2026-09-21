@@ -261,6 +261,7 @@
     setInterval(loadSponsors, SPONSOR_MS);
     setInterval(tickClock, 1000);
     setInterval(dailyReload, 60000);
+    setInterval(flushPlays, PLAY_FLUSH_MS);
   }
 
   /* ---------------- heartbeat: fire-and-forget, jamais relido ---------------- */
@@ -896,6 +897,32 @@
       cb();
     });
   }
+  /* ---------------- relatorio de exibicao (contadores agregados) ----------------
+     Conta cada exibicao em memoria e envia o total a cada 5 min (rpc log_plays). Se a migration
+     ainda nao existir ou a rede falhar, mantem os contadores (limite 200) e tenta de novo depois;
+     apos 3 falhas seguidas pausa por 1 h. Nunca interfere na reproducao. */
+  var playCounts = {}, playFails = 0, playPauseUntil = 0, PLAY_FLUSH_MS = 5 * 60 * 1000;
+  function countPlay(mediaId) {
+    if (!mediaId || String(mediaId).length < 30) return; /* so uuid (fotos do mural nao entram) */
+    var n = 0, k;
+    for (k in playCounts) if (playCounts.hasOwnProperty(k)) n++;
+    if (n >= 200 && !playCounts[mediaId]) return;
+    playCounts[mediaId] = (playCounts[mediaId] || 0) + 1;
+  }
+  function flushPlays() {
+    if (!tvId || new Date().getTime() < playPauseUntil) return;
+    var list = [], k;
+    for (k in playCounts) if (playCounts.hasOwnProperty(k)) list.push({ m: k, n: playCounts[k] });
+    if (!list.length) return;
+    var sent = playCounts;
+    playCounts = {};
+    req("POST", "/rest/v1/rpc/log_plays", { _tv: tvId, _items: list }, function (err) {
+      if (!err) { playFails = 0; return; }
+      for (var m in sent) if (sent.hasOwnProperty(m)) playCounts[m] = (playCounts[m] || 0) + sent[m];
+      if (++playFails >= 3) { playPauseUntil = new Date().getTime() + 60 * 60 * 1000; playFails = 0; }
+    });
+  }
+
   var schedTimer = null;
   function failsafeNoItem() {
     /* nenhum item programado para este horário: tela institucional e nova checagem em 20 s */
@@ -1050,6 +1077,7 @@
       idx = pn; item = items[idx];
     }
     if (!item || !item.url) { scheduleFail(); return; }
+    countPlay(item.media_id);
 
     updateCornerQr();
 
