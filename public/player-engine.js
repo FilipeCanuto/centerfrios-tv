@@ -660,19 +660,26 @@
     var d = new Date(), hh = d.getHours(), mm = d.getMinutes();
     tickerClock.innerHTML = (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
   }
-  setInterval(function () { if (tickerMode === "news") updateNewsClock(); }, 15000);
+  /* Vigia: se o timer de 30 min atrasar/parar (Silk pode segurar timers), força a atualização. */
+  var newsLastTry = 0;
+  setInterval(function () {
+    if (tickerMode === "news") updateNewsClock();
+    if (newsOn() && newsLastTry && new Date().getTime() - newsLastTry > 32 * 60 * 1000) loadNews();
+  }, 15000);
 
   function loadNews() {
     if (!newsOn()) return;
-    var qs = [];
+    newsLastTry = new Date().getTime();
+    var qs = ["t=" + newsLastTry]; /* fura o cache do navegador */
     if (tv.news_queries) qs.push("queries=" + encodeURIComponent(tv.news_queries));
     if (tv.news_exclude) qs.push("exclude=" + encodeURIComponent(tv.news_exclude));
-    httpGetJson("/api/public/news" + (qs.length ? "?" + qs.join("&") : ""), function (err, data) {
+    httpGetJson("/api/public/news?" + qs.join("&"), function (err, data) {
       /* falhou: mantém o último cache válido, sem mexer na tela.
          Sem nada para mostrar ainda, tenta de novo em 60 s (não espera o ciclo de 30 min). */
       if (err || !data || !data.items || !data.items.length) {
-        if (!newsHeadlines.length && !newsRetry) {
-          newsRetry = setTimeout(function () { newsRetry = null; loadNews(); }, 60000);
+        if (!newsRetry) {
+          /* sem nada na tela: 60 s; com cache antigo na tela: 5 min (não espera o ciclo de 30 min) */
+          newsRetry = setTimeout(function () { newsRetry = null; loadNews(); }, newsHeadlines.length ? 300000 : 60000);
         }
         return;
       }
@@ -696,7 +703,7 @@
     }
     renderTicker();
     loadNews();
-    newsTimer = setInterval(loadNews, Math.max(10, row.news_interval_min || 30) * 60 * 1000);
+    newsTimer = setInterval(loadNews, Math.min(30, Math.max(10, row.news_interval_min || 30)) * 60 * 1000);
   }
 
   function applyLayout(row) {

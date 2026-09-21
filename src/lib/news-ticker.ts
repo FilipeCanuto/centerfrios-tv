@@ -20,7 +20,8 @@ export async function fetchNews(
   if (queries) p.set("queries", queries);
   if (exclude) p.set("exclude", exclude);
   try {
-    const res = await fetch("/api/public/news" + (p.toString() ? "?" + p.toString() : ""));
+    p.set("t", String(Date.now())); // fura o cache do navegador
+    const res = await fetch("/api/public/news?" + p.toString(), { cache: "no-store" });
     if (!res.ok) return null;
     const data = await res.json();
     return Array.isArray(data?.items) && data.items.length ? data.items : null;
@@ -87,7 +88,8 @@ export function useNewsTicker(opts: {
       writeCache(CACHE_KEY, { items, savedAt: Date.now(), sig } satisfies Cached);
     }
     load();
-    const ms = Math.max(10, intervalMin || 30) * 60 * 1000;
+    // Atualiza no máximo a cada 30 min (nunca mais espaçado, mesmo que o painel tenha outro valor).
+    const ms = Math.min(30, Math.max(10, intervalMin || 30)) * 60 * 1000;
     const t = setInterval(load, ms);
     return () => {
       stop = true;

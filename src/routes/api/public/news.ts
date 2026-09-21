@@ -16,7 +16,8 @@ import {
   type NewsQuery,
 } from "@/lib/news-feed";
 
-const CACHE_MS = 15 * 60 * 1000;
+// Cache curto no servidor: os players pedem a cada 30 min, então cada pedido pega dados de até 10 min.
+const CACHE_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; body: unknown }>();
 let lastGood: unknown = null; // último resultado válido de qualquer combinação de buscas
 
@@ -100,7 +101,7 @@ export const Route = createFileRoute("/api/public/news")({
 
         const key = JSON.stringify([queries, exclude, limit]);
         const hit = cache.get(key);
-        const headers = { "Cache-Control": "public, max-age=300" };
+        const headers = { "Cache-Control": "public, max-age=60" };
         if (hit && Date.now() - hit.at < CACHE_MS) return Response.json(hit.body, { headers });
 
         const diag: string[] = [];
