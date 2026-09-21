@@ -50,7 +50,7 @@
   var imgA = $("img-a"), imgB = $("img-b");
   var liveImg = $("live-img"), liveTag = $("livetag");
   var tickerEl = $("ticker"), tickerText = $("ticker-text"), tickerNews = $("ticker-news"),
-    tickerBadge = $("ticker-badge"), tickerTrack = $("ticker-track"), tickerClock = $("ticker-clock");
+    tickerTop = $("ticker-top"), tickerTrack = $("ticker-track"), tickerClock = $("ticker-clock");
   var cornerEl = $("corner"), cornerQr = $("corner-qr");
   var sponsorsEl = $("sponsors"), sponsorsList = $("sponsors-list");
   var presenceEl = $("presence"), presenceQr = $("presence-qr");
@@ -376,10 +376,23 @@
     for (var i = 0; i < mediaEls.length; i++) mediaEls[i].style.objectFit = fit;
   }
 
+  /* Altura do rodapé: 90px (texto simples) ou 136px (modo CENTERNEWS, 2 faixas: selo/relógio + manchetes).
+     Decidida pela configuração (show_news_ticker), não pela chegada das manchetes: o layout não pula. */
+  var TICKER_H = 90, TICKER_NEWS_H = 136;
+  function tickerHeight() { return newsOn() ? TICKER_NEWS_H : TICKER_H; }
+  /* Em qual borda o rodapé está ("top" | "bottom" | "none"): os cartões do canto (logo/QR/presença)
+     nunca podem ficar por baixo da barra. */
+  function tickerEdge() {
+    if (!tv || tv.layout_mode !== "multizone") return "none";
+    var pos = tv.ticker_position || "bottom";
+    return pos === "hidden" ? "none" : pos;
+  }
+
   function applyTicker(multizone, tickerPos, tickerTxt) {
     var tickerOn = multizone && tickerPos !== "hidden";
-    var zoneTop = tickerOn && tickerPos === "top" ? "90px" : "0px";
-    var zoneBottom = tickerOn && tickerPos !== "top" ? "90px" : "0px";
+    var th = tickerHeight() + "px";
+    var zoneTop = tickerOn && tickerPos === "top" ? th : "0px";
+    var zoneBottom = tickerOn && tickerPos !== "top" ? th : "0px";
 
     if (lastLayout.tickerOn !== tickerOn) {
       lastLayout.tickerOn = tickerOn;
@@ -410,8 +423,9 @@
       showEl(cornerEl, multizone);
     }
     if (multizone) {
-      if (lastLayout.qrPos !== qrPos) {
-        lastLayout.qrPos = qrPos;
+      var qrKey = qrPos + "|" + tickerHeight() + "|" + tickerEdge();
+      if (lastLayout.qrPos !== qrKey) {
+        lastLayout.qrPos = qrKey;
         corner(cornerEl, qrPos);
       }
       if (lastLayout.logoSize !== logoSize) {
@@ -474,7 +488,8 @@
     }
     if (show) {
       if (!presenceQr.src) presenceQr.src = qrSrc(window.location.origin + "/presenca", 200);
-      if (lastLayout.presencePos !== pos) { lastLayout.presencePos = pos; corner(presenceEl, pos); }
+      var presKey = pos + "|" + tickerHeight() + "|" + tickerEdge();
+      if (lastLayout.presencePos !== presKey) { lastLayout.presencePos = presKey; corner(presenceEl, pos); }
     }
   }
 
@@ -570,6 +585,7 @@
   function updateInfobarVisibility() {
     var on = !!(tv && (tv.show_weather || tv.show_currency));
     infobarEl.style.display = on ? "flex" : "none";
+    infobarEl.style.top = (tickerEdge() === "top" ? tickerHeight() + 24 : 24) + "px";
   }
 
 
@@ -592,20 +608,21 @@
   /* Alterna entre texto manual (clássico) e marquee de manchetes sem piscar:
      o marquee só é remontado quando o conteúdo realmente muda. */
   function renderTicker() {
-    var useNews = newsOn() && newsHeadlines.length > 0;
+    var useNews = newsOn();
     var mode = useNews ? "news" : "text";
     if (mode !== tickerMode) {
       tickerMode = mode;
       tickerText.style.display = useNews ? "none" : "inline-block";
-      tickerBadge.style.display = useNews ? "block" : "none";
+      tickerTop.style.display = useNews ? "block" : "none";
       tickerTrack.style.display = useNews ? "block" : "none";
-      tickerClock.style.display = useNews ? "block" : "none";
       if (useNews) updateNewsClock();
       tickerEl.className = useNews ? "pro" : "";
       tickerNewsKey = "";
     }
     if (!useNews) return;
+    /* Sempre há conteúdo: manchetes + texto manual; sem nada, o slogan (nunca fica só a barra vazia). */
     var items = newsItemsForTicker(), key = "", html = "", k, i;
+    if (!items.length) items = [{ text: "CENTERFRIOS — Crescendo com você", source: "", promo: true }];
     for (i = 0; i < items.length; i++) key += items[i].text + "|" + items[i].source + "¦";
     if (key === tickerNewsKey) return;
     tickerNewsKey = key;
@@ -685,10 +702,12 @@
 
   function corner(el, position) {
     el.style.top = "auto"; el.style.bottom = "auto"; el.style.left = "auto"; el.style.right = "auto";
-    if (position === "top-left") { el.style.top = "24px"; el.style.left = "24px"; }
-    else if (position === "bottom-left") { el.style.bottom = "110px"; el.style.left = "24px"; }
-    else if (position === "bottom-right") { el.style.bottom = "110px"; el.style.right = "24px"; }
-    else { el.style.top = "24px"; el.style.right = "24px"; }
+    var topPx = (tickerEdge() === "top" ? tickerHeight() + 24 : 24) + "px";
+    var botPx = (tickerEdge() === "bottom" ? tickerHeight() + 20 : 110) + "px";
+    if (position === "top-left") { el.style.top = topPx; el.style.left = "24px"; }
+    else if (position === "bottom-left") { el.style.bottom = botPx; el.style.left = "24px"; }
+    else if (position === "bottom-right") { el.style.bottom = botPx; el.style.right = "24px"; }
+    else { el.style.top = topPx; el.style.right = "24px"; }
   }
 
   function updateCornerQr() {

@@ -646,6 +646,10 @@ export function TvPlayer() {
   const qrPosition = tv?.qr_position || "top-right";
   const showLogo = tv?.show_logo !== false;
   const logoHeight = tv?.logo_size || 48;
+  // Rodapé: 90px (texto simples) ou 136px (CENTERNEWS, 2 faixas). Decidido pela configuração,
+  // não pela chegada das manchetes, para o layout não pular.
+  const newsMode = multizone && !!tv?.show_news_ticker;
+  const tickerH = newsMode ? 136 : 90;
   const newsItems = useNewsTicker({
     enabled: !!tv && tv.layout_mode === "multizone" && !!tv.show_news_ticker,
     queries: tv?.news_queries ?? null,
@@ -783,10 +787,18 @@ export function TvPlayer() {
         <SponsorRail sponsors={sponsors} position={tickerPosition === "top" ? "bottom" : "top"} />
       ) : null}
       {tv?.show_presence_qr ? (
-        <PresenceQr position={tv.presence_qr_position || "bottom-right"} />
+        <PresenceQr
+          position={tv.presence_qr_position || "bottom-right"}
+          bottomOffset={(multizone && tickerPosition === "bottom" ? tickerH : 90) + 20}
+          topOffset={multizone && tickerPosition === "top" ? tickerH + 24 : 24}
+        />
       ) : null}
       {tv?.show_weather || tv?.show_currency ? (
-        <InfoBar showWeather={!!tv?.show_weather} showCurrency={!!tv?.show_currency} />
+        <InfoBar
+          showWeather={!!tv?.show_weather}
+          showCurrency={!!tv?.show_currency}
+          topOffset={multizone && tickerPosition === "top" ? tickerH + 24 : 24}
+        />
       ) : null}
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
@@ -1001,13 +1013,13 @@ export function TvPlayer() {
         position: "absolute",
         left: 0,
         right: 0,
-        top: tickerPosition === "top" ? "90px" : 0,
-        bottom: tickerPosition === "top" ? 0 : "90px",
+        top: tickerPosition === "top" ? tickerH + "px" : 0,
+        bottom: tickerPosition === "top" ? 0 : tickerH + "px",
         ...mediaBox,
       }
     : { position: "absolute", inset: 0, ...mediaBox };
 
-  const corner = cornerStyle(qrPosition);
+  const corner = cornerStyle(qrPosition, tickerVisible ? tickerPosition : "hidden", tickerH);
 
   return (
     <Stage portrait={portrait}>
@@ -1112,25 +1124,27 @@ export function TvPlayer() {
                 right: 0,
                 top: tickerPosition === "top" ? 0 : undefined,
                 bottom: tickerPosition === "top" ? undefined : 0,
-                height: "90px",
+                height: tickerH + "px",
                 boxSizing: "border-box",
                 backgroundColor: "#0A3981",
-                ...(newsItems.length
+                ...(newsMode
                   ? {
                       background: "linear-gradient(180deg,#ffffff,#d9dfe8)",
-                      borderTop: tickerPosition === "top" ? undefined : "4px solid #0A3981",
-                      borderBottom: tickerPosition === "top" ? "4px solid #0A3981" : undefined,
-                      boxShadow: "inset 0 -4px 0 #FFC700, 0 0 30px rgba(0,0,0,0.5)",
+                      boxShadow: "0 0 30px rgba(0,0,0,0.5)",
                     }
-                  : {}),
+                  : { display: "flex", alignItems: "center" }),
                 color: "#FFFFFF",
-                display: "flex",
-                alignItems: "center",
                 overflow: "hidden",
               }}
             >
-              {newsItems.length ? (
-                <NewsMarquee items={newsItems} />
+              {newsMode ? (
+                <NewsMarquee
+                  items={
+                    newsItems.length
+                      ? newsItems
+                      : [{ text: tv?.ticker_text || BRAND.slogan, source: "", promo: true }]
+                  }
+                />
               ) : (
                 <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
                   {tv?.ticker_text || BRAND.slogan}
@@ -1166,11 +1180,15 @@ export function TvPlayer() {
   );
 }
 
-function cornerStyle(position: string): React.CSSProperties {
-  if (position === "top-left") return { top: "18px", left: "18px" };
-  if (position === "bottom-left") return { bottom: "18px", left: "18px" };
-  if (position === "bottom-right") return { bottom: "18px", right: "18px" };
-  return { top: "18px", right: "18px" };
+// O cartão do canto (logo/QR) nunca fica por baixo do rodapé: afasta a altura da barra quando
+// ela está na mesma borda.
+function cornerStyle(position: string, tickerAt: string, tickerH: number): React.CSSProperties {
+  const top = (tickerAt === "top" ? tickerH : 0) + 18 + "px";
+  const bottom = (tickerAt === "bottom" ? tickerH : 0) + 18 + "px";
+  if (position === "top-left") return { top, left: "18px" };
+  if (position === "bottom-left") return { bottom, left: "18px" };
+  if (position === "bottom-right") return { bottom, right: "18px" };
+  return { top, right: "18px" };
 }
 
 function MediaLayer({
@@ -1757,7 +1775,15 @@ function weatherEmoji(code: number | null): string {
   return "⛈️";
 }
 
-function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurrency: boolean }) {
+function InfoBar({
+  showWeather,
+  showCurrency,
+  topOffset,
+}: {
+  showWeather: boolean;
+  showCurrency: boolean;
+  topOffset: number;
+}) {
   const [temp, setTemp] = useState<number | null>(null);
   const [weatherCode, setWeatherCode] = useState<number | null>(null);
   const [usd, setUsd] = useState<number | null>(null);
@@ -1823,7 +1849,7 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
     <div
       style={{
         position: "absolute",
-        top: "24px",
+        top: topOffset + "px",
         left: "24px",
         zIndex: 55,
         display: "flex",
@@ -1853,7 +1879,15 @@ function InfoBar({ showWeather, showCurrency }: { showWeather: boolean; showCurr
   );
 }
 
-function PresenceQr({ position }: { position: string }) {
+function PresenceQr({
+  position,
+  bottomOffset,
+  topOffset,
+}: {
+  position: string;
+  bottomOffset: number;
+  topOffset: number;
+}) {
   const [href, setHref] = useState("");
   useEffect(() => {
     setHref(window.location.origin + "/presenca");
@@ -1863,12 +1897,12 @@ function PresenceQr({ position }: { position: string }) {
     "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(href);
   const pos: React.CSSProperties =
     position === "top-left"
-      ? { top: "24px", left: "24px" }
+      ? { top: topOffset + "px", left: "24px" }
       : position === "top-right"
-        ? { top: "24px", right: "24px" }
+        ? { top: topOffset + "px", right: "24px" }
         : position === "bottom-left"
-          ? { bottom: "110px", left: "24px" }
-          : { bottom: "110px", right: "24px" };
+          ? { bottom: bottomOffset + "px", left: "24px" }
+          : { bottom: bottomOffset + "px", right: "24px" };
   return (
     <div
       style={{
@@ -1903,19 +1937,10 @@ function PresenceQr({ position }: { position: string }) {
   );
 }
 
-// Rodapé "CENTERNEWS" (estilo telejornal): selo azul à esquerda, faixa prata com manchetes rolando
-// (direita → esquerda, sem emenda) e relógio à direita. Conteúdo duplicado e animado até -50%;
-// duração pela largura real (~140 px/s).
-const NEWS_PANEL: React.CSSProperties = {
-  alignSelf: "stretch",
-  zIndex: 3,
-  boxSizing: "border-box",
-  whiteSpace: "nowrap",
-  lineHeight: "82px",
-  color: "#FFFFFF",
-  background: "linear-gradient(180deg,#0c4aa6,#0A3981 60%,#072a63)",
-};
-
+// Rodapé "CENTERNEWS" (estilo telejornal, pensado para TV na vertical): faixa superior com o selo,
+// o rótulo e o relógio; abaixo, a faixa prata ocupa a LARGURA TOTAL para as manchetes rolando
+// (direita → esquerda, sem emenda). Conteúdo duplicado e animado até -50%; duração pela
+// largura real (~140 px/s).
 function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [dur, setDur] = useState(120);
@@ -1939,8 +1964,8 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
             style={{
               background: "#0A3981",
               color: "#FFC700",
-              padding: "0 18px",
-              lineHeight: "52px",
+              padding: "0 20px",
+              lineHeight: "60px",
               borderRadius: "6px",
             }}
           >
@@ -1952,10 +1977,10 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
         {it.source ? (
           <span
             style={{
-              marginLeft: "18px",
+              marginLeft: "20px",
               padding: "0 14px",
-              lineHeight: "34px",
-              fontSize: "19px",
+              lineHeight: "36px",
+              fontSize: "20px",
               fontWeight: 700,
               letterSpacing: "2px",
               textTransform: "uppercase",
@@ -1971,7 +1996,7 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           style={{
             width: "14px",
             height: "14px",
-            margin: "0 46px",
+            margin: "0 48px",
             background: "#FFC700",
             border: "2px solid #0A3981",
             transform: "rotate(45deg)",
@@ -1983,25 +2008,73 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
     <>
       <div
         style={{
-          ...NEWS_PANEL,
-          flex: "0 0 252px",
-          padding: "0 36px 0 16px",
-          fontSize: "24px",
-          fontWeight: 900,
-          letterSpacing: "1px",
-          clipPath: "polygon(0 0,100% 0,calc(100% - 22px) 100%,0 100%)",
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 0,
+          height: "40px",
+          zIndex: 3,
+          boxSizing: "border-box",
+          borderBottom: "3px solid #FFC700",
+          background: "linear-gradient(90deg,#061a42,#0A3981 70%,#0c4aa6)",
+          color: "#FFFFFF",
+          whiteSpace: "nowrap",
         }}
       >
-        CENTER<span style={{ color: "#FFC700" }}>NEWS</span>
-      </div>
-      <div style={{ position: "relative", flex: 1, alignSelf: "stretch", overflow: "hidden", marginLeft: "-20px" }}>
         <div
           style={{
             position: "absolute",
             left: 0,
             top: 0,
             bottom: 0,
-            width: "50px",
+            padding: "0 38px 0 18px",
+            lineHeight: "37px",
+            fontSize: "22px",
+            fontWeight: 900,
+            letterSpacing: "2px",
+            color: "#0A3981",
+            background: "#FFC700",
+            clipPath: "polygon(0 0,100% 0,calc(100% - 18px) 100%,0 100%)",
+          }}
+        >
+          CENTERNEWS
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: "254px",
+            top: 0,
+            lineHeight: "37px",
+            fontSize: "16px",
+            fontWeight: 700,
+            letterSpacing: "3px",
+            opacity: 0.9,
+            textTransform: "uppercase",
+          }}
+        >
+          Últimas notícias do setor
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            right: "20px",
+            top: 0,
+            lineHeight: "37px",
+            fontSize: "24px",
+            fontWeight: 700,
+          }}
+        >
+          {clock}
+        </div>
+      </div>
+      <div style={{ position: "absolute", left: 0, right: 0, top: "40px", bottom: 0, overflow: "hidden" }}>
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "40px",
             zIndex: 2,
             background: "linear-gradient(90deg,#f1f3f7,rgba(241,243,247,0))",
           }}
@@ -2012,7 +2085,7 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
             right: 0,
             top: 0,
             bottom: 0,
-            width: "50px",
+            width: "40px",
             zIndex: 2,
             background: "linear-gradient(270deg,#e6eaf0,rgba(230,234,240,0))",
           }}
@@ -2023,7 +2096,7 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           style={{
             height: "100%",
             alignItems: "center",
-            fontSize: "42px",
+            fontSize: "46px",
             fontWeight: 800,
             animationDuration: dur + "s",
           }}
@@ -2031,20 +2104,6 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           {row("a")}
           {row("b")}
         </div>
-      </div>
-      <div
-        style={{
-          ...NEWS_PANEL,
-          flex: "0 0 128px",
-          marginLeft: "-20px",
-          padding: "0 16px 0 40px",
-          fontSize: "30px",
-          fontWeight: 700,
-          textAlign: "right",
-          clipPath: "polygon(22px 0,100% 0,100% 100%,0 100%)",
-        }}
-      >
-        {clock}
       </div>
     </>
   );
