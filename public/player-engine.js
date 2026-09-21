@@ -407,7 +407,7 @@
       }
       if (lastLayout.tickerText !== tickerTxt) {
         lastLayout.tickerText = tickerTxt;
-        tickerText.innerHTML = esc(tickerTxt || "CENTERFRIOS — Crescendo com você");
+        tickerText.innerHTML = esc(tickerTxt || "CENTERFRIOS \u2014 Crescendo com voc\u00ea");
       }
       renderTicker();
     }
@@ -526,7 +526,7 @@
       function (err, data) {
         if (err || !data || !data.current) return; // mantém o último valor exibido
         var t = data.current.temperature_2m;
-        if (typeof t === "number") weatherTemp.innerHTML = Math.round(t) + "&deg;C";
+        if (typeof t === "number") { weatherTemp.innerHTML = Math.round(t) + "&deg;C"; lastTempC = t; }
         weatherIcon.innerHTML = weatherEmojiFor(data.current.weather_code);
         showEl(weatherEl, true);
         weatherEl.style.display = "flex";
@@ -596,9 +596,24 @@
 
   function newsOn() { return !!(tv && tv.layout_mode === "multizone" && tv.show_news_ticker); }
 
+  /* Mensagens automáticas do rodapé (editáveis aqui): dica do dia + aviso de calor forte (>= 30 °C).
+     A dica muda a cada dia; o aviso de calor só entra se o clima estiver ligado e medindo. */
+  var lastTempC = null;
+  var CF_TIPS = ["DICA CENTERFRIOS: mantenha as portas dos balc\u00f5es fechadas \u2014 cada abertura aumenta o consumo de energia e reduz a vida \u00fatil do equipamento.", "DICA CENTERFRIOS: limpe o condensador todo m\u00eas \u2014 equipamento limpo gasta menos energia e conserva melhor seus produtos.", "DICA CENTERFRIOS: confira a temperatura da c\u00e2mara fria todos os dias \u2014 evita perdas e problemas sanit\u00e1rios.", "DICA CENTERFRIOS: n\u00e3o sobrecarregue o expositor \u2014 o ar precisa circular para manter a temperatura uniforme.", "DICA CENTERFRIOS: veda\u00e7\u00e3o ressecada \u00e9 energia jogada fora \u2014 troque a borracha das portas assim que perceber o desgaste.", "DICA CENTERFRIOS: a manuten\u00e7\u00e3o preventiva custa menos que uma parada inesperada \u2014 programe a revis\u00e3o do seu equipamento."];
+  var HOT_MSG = "CALOR FORTE EM MACEI\u00d3: proteja seus produtos \u2014 c\u00e2maras frias e balc\u00f5es refrigerados CENTERFRIOS, com frete gr\u00e1tis em todo o estado.";
+  function extraPromos() {
+    var out = [];
+    var day = Math.floor(new Date().getTime() / 86400000);
+    out.push(CF_TIPS[day % CF_TIPS.length]);
+    if (lastTempC !== null && lastTempC >= 30) out.push(HOT_MSG);
+    return out;
+  }
+
   function newsItemsForTicker() {
     var out = [], m = String((tv && tv.ticker_text) || "").replace(/^\s+|\s+$/g, "");
     if (m) out.push({ text: m, source: "", promo: true });
+    var ex = extraPromos();
+    for (var x = 0; x < ex.length; x++) out.push({ text: ex[x], source: "", promo: true });
     for (var i = 0; i < newsHeadlines.length; i++) {
       out.push({ text: newsHeadlines[i].text, source: newsHeadlines[i].source });
       if (m && (i + 1) % NEWS_PROMO_EVERY === 0 && i + 1 < newsHeadlines.length) out.push({ text: m, source: "", promo: true });
@@ -623,7 +638,7 @@
     if (!useNews) return;
     /* Sempre há conteúdo: manchetes + texto manual; sem nada, o slogan (nunca fica só a barra vazia). */
     var items = newsItemsForTicker(), key = "", html = "", k, i;
-    if (!items.length) items = [{ text: "CENTERFRIOS — Crescendo com você", source: "", promo: true }];
+    if (!items.length) items = [{ text: "CENTERFRIOS \u2014 Crescendo com voc\u00ea", source: "", promo: true }];
     for (i = 0; i < items.length; i++) key += items[i].text + "|" + items[i].source + "¦";
     if (key === tickerNewsKey) return;
     tickerNewsKey = key;

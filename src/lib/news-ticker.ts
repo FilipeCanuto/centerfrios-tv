@@ -29,6 +29,9 @@ export async function fetchNews(
   }
 }
 
+// Dica do dia (muda a cada dia), igual à do player do Fire TV.
+export const CF_TIPS = ["DICA CENTERFRIOS: mantenha as portas dos balcões fechadas — cada abertura aumenta o consumo de energia e reduz a vida útil do equipamento.", "DICA CENTERFRIOS: limpe o condensador todo mês — equipamento limpo gasta menos energia e conserva melhor seus produtos.", "DICA CENTERFRIOS: confira a temperatura da câmara fria todos os dias — evita perdas e problemas sanitários.", "DICA CENTERFRIOS: não sobrecarregue o expositor — o ar precisa circular para manter a temperatura uniforme.", "DICA CENTERFRIOS: vedação ressecada é energia jogada fora — troque a borracha das portas assim que perceber o desgaste.", "DICA CENTERFRIOS: a manutenção preventiva custa menos que uma parada inesperada — programe a revisão do seu equipamento."];
+
 export function interleaveManual(
   headlines: { text: string; source: string }[],
   manual: string | null | undefined,
@@ -36,6 +39,7 @@ export function interleaveManual(
   const out: NewsTickerItem[] = [];
   const m = (manual || "").trim();
   if (m) out.push({ text: m, source: "", promo: true });
+  out.push({ text: CF_TIPS[Math.floor(Date.now() / 86400000) % CF_TIPS.length], source: "", promo: true });
   headlines.forEach((h, i) => {
     out.push({ text: h.text, source: h.source });
     if (m && (i + 1) % PROMO_EVERY === 0 && i + 1 < headlines.length) {

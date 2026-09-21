@@ -139,6 +139,27 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
     load();
   }
 
+  // Reavalia "offline" a cada 30 s mesmo sem novos dados do banco.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Alerta: TV pareada sem sinal há mais de 10 min (a TV envia sinal a cada 45 s).
+  const OFFLINE_ALERT_MS = 10 * 60 * 1000;
+  const offlineAlerts = tvs.filter(
+    (t) =>
+      t.is_paired && (!t.last_ping || Date.now() - new Date(t.last_ping).getTime() > OFFLINE_ALERT_MS),
+  );
+  useEffect(() => {
+    const base = "Painel de Mídia Indoor | CENTERFRIOS";
+    document.title = offlineAlerts.length > 0 ? "(" + offlineAlerts.length + " offline) " + base : base;
+    return () => {
+      document.title = base;
+    };
+  }, [offlineAlerts.length]);
+
   const onlineCount = tvs.filter((t) => isOnline(t.last_ping)).length;
   const ghosts = tvs.filter((t) => !isOnline(t.last_ping) && !t.playlist_id && !t.is_paired);
 
@@ -224,6 +245,20 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
         </div>
       </div>
 
+
+      {offlineAlerts.length > 0 ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
+        >
+          {offlineAlerts.length === 1 ? "1 TV pareada está sem sinal" : offlineAlerts.length + " TVs pareadas estão sem sinal"}{" "}
+          há mais de 10 minutos:{" "}
+          {offlineAlerts
+            .map((t) => t.name + (t.last_ping ? " (último sinal " + new Date(t.last_ping).toLocaleTimeString("pt-BR") + ")" : " (nunca conectou)"))
+            .join("; ")}
+          . Verifique energia, internet e o Fire TV Stick.
+        </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {tvs.map((tv) => {
