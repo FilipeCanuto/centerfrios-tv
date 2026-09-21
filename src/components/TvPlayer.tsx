@@ -649,7 +649,7 @@ export function TvPlayer() {
   // Rodapé: 90px (texto simples) ou 136px (CENTERNEWS, 2 faixas). Decidido pela configuração,
   // não pela chegada das manchetes, para o layout não pular.
   const newsMode = multizone && !!tv?.show_news_ticker;
-  const tickerH = newsMode ? 136 : 90;
+  const tickerH = newsMode ? 127 : 90;
   const newsItems = useNewsTicker({
     enabled: !!tv && tv.layout_mode === "multizone" && !!tv.show_news_ticker,
     queries: tv?.news_queries ?? null,
@@ -1099,7 +1099,7 @@ export function TvPlayer() {
           <div
             style={{
               position: "absolute",
-              display: "flex",
+              display: showLogo || qrDataUrl ? "flex" : "none",
               alignItems: "center",
               gap: "14px",
               backgroundColor: "rgba(10,57,129,0.85)",
@@ -1969,7 +1969,7 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
               background: "#0A3981",
               color: "#FFC700",
               padding: "0 20px",
-              lineHeight: "60px",
+              lineHeight: "54px",
               borderRadius: "6px",
             }}
           >
@@ -2046,26 +2046,12 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
         <div
           style={{
             position: "absolute",
-            left: "254px",
-            top: 0,
-            lineHeight: "37px",
-            fontSize: "16px",
-            fontWeight: 700,
-            letterSpacing: "3px",
-            opacity: 0.9,
-            textTransform: "uppercase",
-          }}
-        >
-          Últimas notícias do setor
-        </div>
-        <div
-          style={{
-            position: "absolute",
             right: "20px",
             top: 0,
             lineHeight: "37px",
-            fontSize: "24px",
+            fontSize: "28px",
             fontWeight: 700,
+            letterSpacing: "1px",
           }}
         >
           {clock}

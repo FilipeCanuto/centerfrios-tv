@@ -380,7 +380,7 @@
 
   /* Altura do rodapé: 90px (texto simples) ou 136px (modo CENTERNEWS, 2 faixas: selo/relógio + manchetes).
      Decidida pela configuração (show_news_ticker), não pela chegada das manchetes: o layout não pula. */
-  var TICKER_H = 90, TICKER_NEWS_H = 136;
+  var TICKER_H = 90, TICKER_NEWS_H = 127;
   function tickerHeight() { return newsOn() ? TICKER_NEWS_H : TICKER_H; }
   /* Em qual borda o rodapé está ("top" | "bottom" | "none"): os cartões do canto (logo/QR/presença)
      nunca podem ficar por baixo da barra. */
@@ -444,6 +444,7 @@
       if (lastLayout.logoH !== logoH) { lastLayout.logoH = logoH; logoImg2.style.height = logoH + "px"; }
     }
     updateCornerQr();
+    syncCornerBox();
   }
 
   function applyAudio(row) {
@@ -730,11 +731,20 @@
   function updateCornerQr() {
     var item = items.length ? items[idx % items.length] : null;
     var url = (item && item.qr_url) || (tv && tv.qr_url) || null;
-    if (!url) { showEl(cornerQr, false); cornerQr.removeAttribute("src"); return; }
+    if (!url) { showEl(cornerQr, false); cornerQr.removeAttribute("src"); syncCornerBox(); return; }
     var next = qrSrc(url, 200);
     if (cornerQr.getAttribute("src") !== next) cornerQr.src = next;
     cornerQr.style.display = "inline-block";
     if (tv && tv.layout_mode !== "multizone") { showEl(cornerEl, true); }
+    syncCornerBox();
+  }
+
+  /* Multi-zona: o cartão azul do canto só existe se tiver logo OU QR (sem isso sobrava uma "elipse" vazia). */
+  function syncCornerBox() {
+    if (!tv || tv.layout_mode !== "multizone") return;
+    var hasLogo = tv.show_logo !== false;
+    var hasQr = cornerQr.style.display !== "none" && !!cornerQr.getAttribute("src");
+    showEl(cornerEl, hasLogo || hasQr);
   }
 
   function tickClock() {
