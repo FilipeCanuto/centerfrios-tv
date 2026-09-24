@@ -25,12 +25,10 @@
   var useNewsCols = true, newsColsRetryAt = 0;
   var NEWS_PROMO_EVERY = 4;
 
-  /* Intervalo mínimo praticável sem abusar de APIs públicas gratuitas.
-     Open-Meteo atualiza a fonte ~1x/hora e o Banco Central Europeu (cotação)
-     ~1x/dia -- consultar mais rápido que isso não traz dado mais novo, só
-     garante que a tela pegue a atualização assim que ela sai. */
-  var WEATHER_MS = 60 * 1000;
-  var CURRENCY_MS = 60 * 1000;
+  /* A estação do aeroporto (METAR) mede de hora em hora e a PTAX de fechamento sai 1x/dia:
+     consultar a cada 5 min já pega qualquer atualização sem abusar das fontes. */
+  var WEATHER_MS = 5 * 60 * 1000;
+  var CURRENCY_MS = 5 * 60 * 1000;
 
   var POLL_MS = 5000;        // estado da TV
   var HEARTBEAT_MS = 45000;  // fire-and-forget, NUNCA lido de volta
@@ -520,40 +518,81 @@
     return "⛈️";
   }
 
+  /* Fonte principal: /api/public/infobar (servidor do próprio site, sem CORS, com cache):
+     - tempo: temperatura MEDIDA na estação oficial do aeroporto de Maceió (METAR SBMO);
+     - cotações: PTAX de FECHAMENTO do dia útil anterior (Banco Central do Brasil).
+     Se o servidor falhar, cai para as APIs públicas direto do navegador (Open-Meteo / BCE). */
+  var infobarData = null, infobarAt = 0, infobarWaiting = [], infobarReq = 0;
+  function fetchInfobar(cb) {
+    var now = new Date().getTime();
+    if (infobarData && now - infobarAt < 30000) { cb(infobarData); return; }
+    infobarWaiting.push(cb);
+    if (infobarWaiting.length > 1 && now - infobarReq < 20000) return;   /* busca em andamento */
+    var my = infobarReq = now, done = false;
+    function finish(data) {
+      if (done || my !== infobarReq) return;
+      done = true;
+      var w = infobarWaiting; infobarWaiting = [];
+      for (var i = 0; i < w.length; i++) { try { w[i](data); } catch (e) {} }
+    }
+    setTimeout(function () { finish(null); }, 20000);  /* servidor não respondeu: usa a reserva */
+    httpGetJson("/api/public/infobar?t=" + now, function (err, data) {
+      if (!err && data && (data.weather || data.rates)) { infobarData = data; infobarAt = new Date().getTime(); }
+      else data = null;
+      finish(data);
+    });
+  }
+  function money(v) { return v.toFixed(2).replace(".", ","); }
+  function ddmm(ymd) { var p = String(ymd || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] : ""; }
+  function ymdOffset(days) {
+    var d = new Date(new Date().getTime() + days * 86400000);
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function showWeather(temp, code, isDay) {
+    if (typeof temp !== "number" || !isFinite(temp)) return;
+    weatherTemp.innerHTML = Math.round(temp) + "&deg;C"; lastTempC = temp;
+    weatherIcon.innerHTML = (isDay === false && (code === 0 || code === 1)) ? "🌙" : weatherEmojiFor(code);
+    weatherEl.style.display = "flex";
+  }
+
   function loadWeather() {
     if (!tv || !tv.show_weather) return;
-    httpGetJson(
-      "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089" +
-        "&current=temperature_2m,weather_code&timezone=America%2FMaceio",
-      function (err, data) {
-        if (err || !data || !data.current) return; // mantém o último valor exibido
-        var t = data.current.temperature_2m;
-        if (typeof t === "number") { weatherTemp.innerHTML = Math.round(t) + "&deg;C"; lastTempC = t; }
-        weatherIcon.innerHTML = weatherEmojiFor(data.current.weather_code);
-        showEl(weatherEl, true);
-        weatherEl.style.display = "flex";
-      }
-    );
+    fetchInfobar(function (data) {
+      var w = data && data.weather;
+      if (w) { showWeather(w.temp, w.code, w.isDay); return; }
+      httpGetJson(
+        "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089" +
+          "&current=temperature_2m,weather_code,is_day&timezone=America%2FMaceio",
+        function (err, d) {
+          if (err || !d || !d.current) return; // mantém o último valor exibido
+          showWeather(d.current.temperature_2m, d.current.weather_code, d.current.is_day !== 0);
+        }
+      );
+    });
+  }
+
+  function showRates(usd, eur, date) {
+    var html = "";
+    if (usd && isFinite(usd)) html += "<span>US$ " + money(usd) + "</span>";
+    if (eur && isFinite(eur)) html += "<span>&euro; " + money(eur) + "</span>";
+    if (!html) return;
+    if (ddmm(date)) html += '<span class="lbl">fech. ' + ddmm(date) + "</span>";
+    currencyEl.innerHTML = html;
+    currencyEl.style.display = "flex";
   }
 
   function loadCurrency() {
     if (!tv || !tv.show_currency) return;
-    // Frankfurter (BCE, sem chave, sem limite de uso perceptível) em vez da
-    // AwesomeAPI -- essa vinha batendo "limite de uso atingido" para o IP
-    // compartilhado da Lovable. Pede BRL->USD/EUR e inverte (1/taxa) pra
-    // exibir quantos BRL valem 1 USD / 1 EUR, que é o que faz sentido aqui.
-    // .dev direto (nao .app, que faz redirect 301) -- Silk/Fire OS nao segue
-    // bem redirect cross-origin em fetch(), a cotacao ficava sem atualizar.
-    httpGetJson("https://api.frankfurter.dev/v1/latest?from=BRL&to=USD,EUR", function (err, data) {
-      if (err || !data || !data.rates) return; // mantém o último valor exibido
-      var usd = data.rates.USD ? 1 / data.rates.USD : 0;
-      var eur = data.rates.EUR ? 1 / data.rates.EUR : 0;
-      var html = "";
-      if (usd && isFinite(usd)) html += "<span>US$ " + usd.toFixed(2) + "</span>";
-      if (eur && isFinite(eur)) html += "<span>&euro; " + eur.toFixed(2) + "</span>";
-      if (!html) return;
-      currencyEl.innerHTML = html;
-      currencyEl.style.display = "flex";
+    fetchInfobar(function (data) {
+      var r = data && data.rates;
+      if (r) { showRates(r.usd, r.eur, r.date); return; }
+      /* Reserva: BCE (Frankfurter) do dia anterior (a API devolve o último dia útil <= data).
+         .dev direto (o .app faz redirect 301 que o Silk não segue bem em fetch). */
+      httpGetJson("https://api.frankfurter.dev/v1/" + ymdOffset(-1) + "?from=BRL&to=USD,EUR", function (err, d) {
+        if (err || !d || !d.rates) return; // mantém o último valor exibido
+        showRates(d.rates.USD ? 1 / d.rates.USD : 0, d.rates.EUR ? 1 / d.rates.EUR : 0, d.date);
+      });
     });
   }
 
@@ -886,10 +925,27 @@
   function pickIndex(from) {
     for (var k = 0; k < items.length; k++) {
       var j = (from + k) % items.length;
-      if (itemActive(items[j])) return j;
+      if (itemActive(items[j]) && !ytIsBad(items[j])) return j;
     }
     return -1;
   }
+
+  /* Vídeos do YouTube que falharam NESTE aparelho (indisponível, bloqueado, não inicia):
+     após 2 falhas seguidas, ficam fora do rodízio por 2 h e depois são testados de novo.
+     Assim um vídeo problemático não custa espera/tela parada a cada volta da playlist. */
+  var ytFails = {}, ytBadUntil = {}, YT_BAD_MS = 2 * 60 * 60 * 1000;
+  function itemYtId(it) {
+    return it && (it.type === "youtube" || (it.type !== "image" && ytId(it.url))) ? ytId(it.url) : "";
+  }
+  function ytIsBad(it) {
+    var v = itemYtId(it);
+    return !!(v && ytBadUntil[v] && new Date().getTime() < ytBadUntil[v]);
+  }
+  function ytMarkFail(v) {
+    ytFails[v] = (ytFails[v] || 0) + 1;
+    if (ytFails[v] >= 2) { ytBadUntil[v] = new Date().getTime() + YT_BAD_MS; ytFails[v] = 0; }
+  }
+  function ytMarkOk(v) { ytFails[v] = 0; ytBadUntil[v] = 0; }
   function attachSched(list, playlistId, cb) {
     if (!playlistId || !list.length) { cb(); return; }
     req("GET", "/rest/v1/playlists?id=eq." + playlistId + "&select=items", null, function (err, pls) {
@@ -1088,7 +1144,7 @@
     token++;
     var my = token;
     var item = items[idx % items.length];
-    if (item && !itemActive(item)) {
+    if (item && (!itemActive(item) || ytIsBad(item))) {
       var pn = pickIndex(idx + 1);
       if (pn < 0) { failsafeNoItem(); return; }
       idx = pn; item = items[idx];
@@ -1149,6 +1205,10 @@
       }
       crossfade(el, [other, activeImg, idleImg, activeYt.el]);
       activeVideo = el; idleVideo = other;
+      /* vigia: se o vídeo nunca começar a tocar (sem 'playing' nem 'waiting'), avança em 20 s.
+         O onplaying substitui este timer pelo watchdog da duração real. */
+      clearTimer("hard");
+      timers.hard = setTimeout(function () { if (my === token) { diag("video nao iniciou"); advance(); } }, 20000);
       preloadNext();
     }
 
@@ -1214,9 +1274,11 @@
   /* pré-carrega a próxima mídia enquanto a atual toca (sem play no oculto) */
   function preloadNext() {
     if (items.length < 2) return;
-    var next = items[(idx + 1) % items.length];
+    var ni = pickIndex(idx + 1);          /* respeita agenda e vídeos com falha */
+    if (ni < 0 || ni === idx % items.length) return;
+    var next = items[ni];
     if (!next || !next.url) return;
-    var nextYt = (next.type === "youtube" || (next.type !== "image" && ytId(next.url))) ? ytId(next.url) : "";
+    var nextYt = itemYtId(next);
     if (nextYt) {
       /* mesmo princípio do double buffer de MP4: cueVideoById no slot oculto, sem play */
       whenYtReady(function () {
@@ -1284,16 +1346,22 @@
   }
 
   function ytCreate(slot, videoId, autoplay) {
+    var h = slot.h;                 /* ytDestroy zera os handlers: preserva os do item atual */
     ytDestroy(slot);
+    slot.h = h;
     slot.videoId = videoId;
     try {
       slot.player = new window.YT.Player(slot.holder, {
         videoId: videoId,
         width: "100%",
         height: "100%",
+        /* origin/widget_referrer: o YouTube passou a exigir a identificação do site que incorpora
+           (sem ela: "Erro de configuração do player"/"Vídeo indisponível" em alguns aparelhos) */
         playerVars: {
           autoplay: autoplay ? 1 : 0, controls: 0, modestbranding: 1, rel: 0,
-          playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3
+          playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3,
+          origin: window.location.protocol + "//" + window.location.host,
+          widget_referrer: window.location.href
         },
         events: {
           onReady: function () {
@@ -1323,57 +1391,112 @@
     ytSetAudio(slot, muted, volume);
   }
 
+  /* YouTube: o iframe só aparece na tela quando o vídeo REALMENTE começa a tocar.
+     Enquanto isso, a mídia anterior continua visível. Assim a tela de erro do YouTube
+     ("Vídeo indisponível", "Erro de configuração", botão de play parado) nunca é exibida:
+     se não tocar em 20 s, ou se o player reportar erro, pula para o próximo item.
+     Tudo é conferido também por leitura direta (getPlayerState/getVideoData a cada 1 s),
+     porque no Silk os eventos do iframe (postMessage) às vezes não chegam. */
+  var YT_START_MS = 20000, YT_FROZEN_S = 20;
+
   function renderYoutube(item, my) {
     var vid = ytId(item.url);
     if (!vid) { scheduleFail(); return; }
     var slot = idleYt, other = activeYt;
-    var started = false;
+    var started = false, shown = false, finished = false, lastT = -1, still = 0, hardFromDuration = false;
+
+    function st() { return window.YT && window.YT.PlayerState; }
+
+    function fail(why) {
+      if (my !== token || finished) return;
+      finished = true;
+      clearTimer("ytpoll");
+      ytMarkFail(vid);
+      diag(why);
+      if (!shown) ytDestroy(slot);          /* nunca apareceu: descarta o iframe com erro */
+      advance();
+    }
+
+    function end() {
+      if (my !== token || finished) return;
+      finished = true;
+      clearTimer("ytpoll");
+      advance();
+    }
+
+    function reveal() {
+      if (my !== token || shown || finished) return;
+      shown = true;
+      clearTimer("canplay");
+      ytMarkOk(vid);
+      diag("");
+      crossfade(slot.el, [other.el, activeVideo, idleVideo, activeImg, idleImg]);
+      activeYt = slot; idleYt = other;
+      var d = 0;
+      try { d = slot.player.getDuration(); } catch (x) {}
+      clearTimer("hard");
+      hardFromDuration = !!(d && isFinite(d) && d > 0);
+      var secs = hardFromDuration ? d + 8 : 900;   // watchdog dinâmico
+      timers.hard = setTimeout(end, secs * 1000);
+      /* pré-carrega DEPOIS da limpeza do crossfade (que destrói o slot antigo do YouTube) */
+      setTimeout(function () { if (my === token) preloadNext(); }, FADE_MS + 300);
+    }
+
+    function check() {
+      if (my !== token) { clearTimer("ytpoll"); return; }
+      var S = st();
+      if (!S || !slot.player) return;
+      var s = -9, t = 0, ec = "";
+      try { s = slot.player.getPlayerState(); } catch (e) {}
+      try { var vd = slot.player.getVideoData(); ec = vd && vd.errorCode ? String(vd.errorCode) : ""; } catch (e) {}
+      if (ec) { fail("youtube indisponivel (" + ec + ")"); return; }
+      if (s === S.ENDED) { if (shown) end(); else fail("youtube nao iniciou"); return; }
+      if (!shown) {
+        if (s === S.PLAYING) reveal();
+        else if (s === S.PAUSED || s === S.CUED || s === -1) { try { slot.player.playVideo(); } catch (e) {} }
+        return;
+      }
+      /* duração só conhecida depois (ex.: após um anúncio): ajusta o watchdog ao tempo real */
+      if (!hardFromDuration) {
+        var dd = 0;
+        try { dd = slot.player.getDuration(); } catch (e) {}
+        if (dd && isFinite(dd) && dd > 0) {
+          hardFromDuration = true;
+          var cur = 0;
+          try { cur = slot.player.getCurrentTime() || 0; } catch (e) {}
+          clearTimer("hard");
+          timers.hard = setTimeout(end, (Math.max(0, dd - cur) + 8) * 1000);
+        }
+      }
+      /* já na tela: se o tempo não anda, avança. Tocando (pode ser anúncio): 90 s;
+         pausado/carregando/parado: 20 s, tentando retomar a cada 5 s. */
+      try { t = slot.player.getCurrentTime(); } catch (e) {}
+      if (t !== lastT) { lastT = t; still = 0; return; }
+      still++;
+      if (still >= (s === S.PLAYING ? 90 : YT_FROZEN_S)) { end(); return; }
+      if (still % 5 === 0 && s !== S.BUFFERING && s !== S.PLAYING) { try { slot.player.playVideo(); } catch (e) {} }
+    }
 
     function go() {
       if (my !== token || started || !slot.player) return;
       started = true;
-      clearTimer("canplay");
       try { slot.player.playVideo(); } catch (e) {}
       ytApplyAudio(slot);
-      crossfade(slot.el, [other.el, activeVideo, idleVideo, activeImg, idleImg]);
-      activeYt = slot; idleYt = other;
-      preloadNext();
-      /* Rede de segurança: em alguns Fire TV Stick/Silk o postMessage de
-         onStateChange(ENDED) as vezes nao chega (o iframe do YouTube fica
-         parado na tela de "replay" e o player nunca avanca). getPlayerState()
-         e uma leitura direta do objeto, nao depende do evento chegar --
-         confere a cada 2s como um fallback independente do listener. */
       clearTimer("ytpoll");
-      timers.ytpoll = setInterval(function () {
-        if (my !== token) { clearTimer("ytpoll"); return; }
-        var st = window.YT && window.YT.PlayerState;
-        if (!st || !slot.player) return;
-        try {
-          if (slot.player.getPlayerState() === st.ENDED) { clearTimer("ytpoll"); advance(); }
-        } catch (e) {}
-      }, 2000);
+      timers.ytpoll = setInterval(check, 1000);
     }
 
     slot.h = {
       onReady: go,
       onStateChange: function (e) {
         if (my !== token) return;
-        var st = window.YT && window.YT.PlayerState;
-        if (!st) return;
-        if (e.data === st.PLAYING) {
-          clearTimer("hard");
-          var d = 0;
-          try { d = slot.player.getDuration(); } catch (x) {}
-          var secs = (d && isFinite(d) && d > 0) ? d + 8 : 900;   // watchdog dinâmico
-          timers.hard = setTimeout(function () { if (my === token) advance(); }, secs * 1000);
-        } else if (e.data === st.ENDED) {
-          if (my === token) advance();
-        }
+        var S = st();
+        if (!S) return;
+        if (e.data === S.PLAYING) reveal();
+        else if (e.data === S.ENDED && shown) end();
       },
-      onError: function () {
-        if (my !== token) return;
-        diag("youtube indisponivel");     // privado/removido/bloqueado: pula sem travar
-        advance();
+      onError: function (e) {
+        fail("youtube indisponivel (" + (e && e.data) + ")");   // privado/removido/bloqueado: pula sem travar
       }
     };
 
@@ -1381,15 +1504,15 @@
       if (my !== token) return;
       if (slot.player && slot.videoId === vid) {
         if (slot.ready) go();             // já pré-carregado (cue): entra sem esperar rede
-        return;
+        return;                           // senão, onReady -> go
       }
       ytCreate(slot, vid, true);
     });
 
-    timers.canplay = setTimeout(function () {                     // segurança
-      if (my !== token || started) return;
-      if (slot.player && slot.ready) go(); else advance();
-    }, 10000);
+    timers.canplay = setTimeout(function () {                     // não começou a tocar: pula
+      if (my !== token || shown) return;
+      fail("youtube nao iniciou");
+    }, YT_START_MS);
   }
 
   /* ---------------- go ---------------- */

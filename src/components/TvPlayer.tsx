@@ -52,7 +52,7 @@ async function queryTv(id: string) {
   return supabase.from("tvs").select(TV_SELECT_COLUMNS_LEGACY).eq("id", id).maybeSingle();
 }
 
-const INFOBAR_REFRESH_MS = 60 * 1000;
+const INFOBAR_REFRESH_MS = 5 * 60 * 1000;
 
 type YTPlayerInstance = {
   mute: () => void;
@@ -1790,23 +1790,68 @@ function InfoBar({
 }) {
   const [temp, setTemp] = useState<number | null>(null);
   const [weatherCode, setWeatherCode] = useState<number | null>(null);
+  const [isDay, setIsDay] = useState(true);
   const [usd, setUsd] = useState<number | null>(null);
   const [eur, setEur] = useState<number | null>(null);
+  const [ratesDate, setRatesDate] = useState<string>("");
 
+  // Fonte principal: /api/public/infobar (temperatura medida no aeroporto de Maceió + PTAX de
+  // fechamento do dia útil anterior). Reserva: Open-Meteo / BCE direto do navegador.
   useEffect(() => {
-    if (!showWeather) return;
+    if (!showWeather && !showCurrency) return;
     let stop = false;
     async function load() {
+      let data: any = null;
       try {
-        const res = await fetch(
-          "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089&current=temperature_2m,weather_code&timezone=America%2FMaceio",
-        );
-        const data = await res.json();
-        if (stop) return;
-        setTemp(typeof data?.current?.temperature_2m === "number" ? data.current.temperature_2m : null);
-        setWeatherCode(typeof data?.current?.weather_code === "number" ? data.current.weather_code : null);
+        const res = await fetch("/api/public/infobar?t=" + Date.now(), { cache: "no-store" });
+        if (res.ok) data = await res.json();
       } catch {
-        /* mantém o último valor conhecido em vez de sumir da tela */
+        data = null;
+      }
+      if (stop) return;
+      if (showWeather) {
+        const w = data?.weather;
+        if (w && typeof w.temp === "number") {
+          setTemp(w.temp);
+          setWeatherCode(typeof w.code === "number" ? w.code : null);
+          setIsDay(w.isDay !== false);
+        } else {
+          try {
+            const r = await fetch(
+              "https://api.open-meteo.com/v1/forecast?latitude=-9.6498&longitude=-35.7089&current=temperature_2m,weather_code,is_day&timezone=America%2FMaceio",
+            );
+            const d = await r.json();
+            if (!stop && typeof d?.current?.temperature_2m === "number") {
+              setTemp(d.current.temperature_2m);
+              setWeatherCode(typeof d.current.weather_code === "number" ? d.current.weather_code : null);
+              setIsDay(d.current.is_day !== 0);
+            }
+          } catch {
+            /* mantém o último valor conhecido em vez de sumir da tela */
+          }
+        }
+      }
+      if (showCurrency) {
+        const r = data?.rates;
+        if (r && typeof r.usd === "number") {
+          setUsd(r.usd);
+          setEur(typeof r.eur === "number" ? r.eur : null);
+          setRatesDate(String(r.date || ""));
+        } else {
+          try {
+            const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Maceio" });
+            const res = await fetch("https://api.frankfurter.dev/v1/" + y + "?from=BRL&to=USD,EUR");
+            const d = await res.json();
+            if (stop) return;
+            const u = d?.rates?.USD ? 1 / d.rates.USD : NaN;
+            const e = d?.rates?.EUR ? 1 / d.rates.EUR : NaN;
+            if (isFinite(u)) setUsd(u);
+            if (isFinite(e)) setEur(e);
+            setRatesDate(String(d?.date || ""));
+          } catch {
+            /* mantém o último valor conhecido em vez de sumir da tela */
+          }
+        }
       }
     }
     load();
@@ -1815,35 +1860,7 @@ function InfoBar({
       stop = true;
       clearInterval(t);
     };
-  }, [showWeather]);
-
-  useEffect(() => {
-    if (!showCurrency) return;
-    let stop = false;
-    async function load() {
-      try {
-        // Frankfurter (BCE, sem chave, sem limite de uso perceptível) em vez da
-        // AwesomeAPI. Pede BRL->USD/EUR e inverte (1/taxa) pra exibir quantos
-        // BRL valem 1 USD / 1 EUR. .dev direto (nao .app, que faz redirect
-        // 301) -- Silk/Fire OS não segue bem redirect cross-origin em fetch().
-        const res = await fetch("https://api.frankfurter.dev/v1/latest?from=BRL&to=USD,EUR");
-        const data = await res.json();
-        if (stop) return;
-        const u = data?.rates?.USD ? 1 / data.rates.USD : NaN;
-        const e = data?.rates?.EUR ? 1 / data.rates.EUR : NaN;
-        setUsd(isFinite(u) ? u : null);
-        setEur(isFinite(e) ? e : null);
-      } catch {
-        /* mantém o último valor conhecido em vez de sumir da tela */
-      }
-    }
-    load();
-    const t = setInterval(load, INFOBAR_REFRESH_MS);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, [showCurrency]);
+  }, [showWeather, showCurrency]);
 
   const weatherReady = showWeather && temp !== null;
   const currencyReady = showCurrency && (usd !== null || eur !== null);
@@ -1868,15 +1885,20 @@ function InfoBar({
     >
       {weatherReady ? (
         <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "22px", fontWeight: 800 }}>
-          <span>{weatherEmoji(weatherCode)}</span>
+          <span>{!isDay && (weatherCode === 0 || weatherCode === 1) ? "🌙" : weatherEmoji(weatherCode)}</span>
           <span>{Math.round(temp as number)}°C</span>
           <span style={{ fontSize: "14px", fontWeight: 600, opacity: 0.85 }}>Maceió</span>
         </div>
       ) : null}
       {currencyReady ? (
-        <div style={{ display: "flex", gap: "14px", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
-          {usd !== null ? <span>US$ {usd.toFixed(2)}</span> : null}
-          {eur !== null ? <span>€ {eur.toFixed(2)}</span> : null}
+        <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
+          {usd !== null ? <span>US$ {usd.toFixed(2).replace(".", ",")}</span> : null}
+          {eur !== null ? <span>€ {eur.toFixed(2).replace(".", ",")}</span> : null}
+          {/^\d{4}-\d{2}-\d{2}$/.test(ratesDate) ? (
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "#FFFFFF", opacity: 0.8 }}>
+              fech. {ratesDate.slice(8, 10)}/{ratesDate.slice(5, 7)}
+            </span>
+          ) : null}
         </div>
       ) : null}
     </div>

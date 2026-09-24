@@ -5,7 +5,16 @@
 // bing: buscas simples (só palavras-chave) usadas quando o Google News não responde —
 // o Bing não entende OR/parênteses/múltiplas aspas.
 export type NewsQuery = { q: string; weight: number; bing?: string[] };
-export type NewsHeadline = { title: string; source: string; link: string; publishedAt: string; score: number };
+// domain: site de origem (para descartar veículos estrangeiros); desc: resumo (Bing), ajuda a detectar o idioma.
+export type NewsHeadline = {
+  title: string;
+  source: string;
+  link: string;
+  publishedAt: string;
+  score: number;
+  domain?: string;
+  desc?: string;
+};
 
 export const DEFAULT_NEWS_QUERIES: NewsQuery[] = [
   // Peso 3 — núcleo do negócio
@@ -133,6 +142,67 @@ export function parseExcludeLines(text: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+// ---------- Somente português do Brasil ----------
+// O Bing ignora o idioma pedido com frequência (vêm manchetes do México, Espanha, Argentina...) e o
+// Google às vezes traz Portugal. Duas barreiras: domínio estrangeiro e detecção de idioma do texto.
+const FOREIGN_TLDS = new Set([
+  "pt", "es", "mx", "ar", "cl", "co", "pe", "uy", "py", "bo", "ec", "ve", "cr", "gt", "hn", "sv", "ni",
+  "pa", "do", "cu", "pr", "it", "fr", "de", "uk", "ao", "mz", "cv", "us", "ca", "ch", "be", "nl",
+]);
+export function isForeignDomain(domain: string | undefined): boolean {
+  if (!domain) return false;
+  const tld = domain.toLowerCase().replace(/\.$/, "").split(".").pop() || "";
+  return FOREIGN_TLDS.has(tld);
+}
+
+// Palavras/sinais exclusivos de cada idioma (as comuns aos dois não contam).
+// Palavras que só existem (com essa grafia) em um dos idiomas; as comuns aos dois ficam de fora.
+const ES_WORDS = new Set([
+  "el", "los", "las", "del", "y", "en", "con", "sin", "al", "según", "año", "años", "hasta", "sólo", "más",
+  "muy", "pero", "sus", "han", "hoy", "nuevo", "nueva", "nuevos", "nuevas", "precios", "ventas", "cómo", "qué",
+  "también", "están", "tiene", "tienen", "puede", "pueden", "cuando", "donde", "dónde", "ya", "su", "lo", "hay",
+  "fue", "estos", "alza", "alzas", "suben", "bajan", "crecen", "crece", "cierre", "millones",
+]);
+const PT_WORDS = new Set([
+  "não", "são", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "um", "uma", "com", "mais", "é", "à",
+  "ao", "aos", "pelo", "pela", "pelos", "pelas", "seu", "sua", "seus", "suas", "também", "já", "após", "até",
+  "e", "o", "os", "novo", "nova", "preço", "preços", "vendas", "cresce", "sobe", "queda", "diz", "vai", "pode",
+  "tem", "têm", "foi", "milhões", "onde", "quando", "estes", "só", "hoje", "muito", "mas",
+]);
+
+export function looksPtBr(text: string): boolean {
+  const t = " " + String(text || "").toLowerCase() + " ";
+  let pt = 0;
+  let es = 0;
+  if (/ção|ções|ã|õ|ç|lh|nh/.test(t)) pt += 2;
+  if (/ñ|ción\b|ciones\b|¿|¡|ll[aeiou]|ü/.test(t)) es += 2;
+  for (const w of t.split(/[^a-záàâãéêíóôõúüçñ]+/)) {
+    if (!w) continue;
+    if (PT_WORDS.has(w)) pt++;
+    if (ES_WORDS.has(w)) es++;
+  }
+  if (!es) return true; // sem sinal de espanhol: fica
+  return pt > es;
+}
+
+// Domínio do veículo: atributo url do <source> (Google) ou parâmetro url= do link (Bing).
+function domainOf(block: string, link: string): string {
+  const src = block.match(/<source[^>]*\burl="([^"]+)"/i);
+  let u = src ? src[1] : "";
+  if (!u) {
+    const m = link.match(/[?&]url=([^&]+)/i);
+    if (m) {
+      try {
+        u = decodeURIComponent(m[1]);
+      } catch {
+        u = "";
+      }
+    } else if (!/news\.google\.|bing\.com/i.test(link)) u = link;
+  }
+  const h = u.match(/^https?:\/\/([^/:?#]+)/i);
+  return h ? h[1].toLowerCase() : "";
+}
+
 function decodeEntities(s: string): string {
   return s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -166,14 +236,19 @@ export function parseRss(xml: string): Omit<NewsHeadline, "score">[] {
         title = title.slice(0, i);
       }
     }
+    const link = tag(block, "link");
+    const rawDesc = tag(block, "description");
+    const desc = /<a\s/i.test(rawDesc) ? "" : rawDesc.replace(/<[^>]+>/g, " ").slice(0, 400);
     const pub = tag(block, "pubDate");
     const t = Date.parse(pub);
     if (!title) continue;
     items.push({
       title: title.trim(),
       source: source.trim(),
-      link: tag(block, "link"),
+      link,
       publishedAt: isNaN(t) ? "" : new Date(t).toISOString(),
+      domain: domainOf(block, link),
+      desc,
     });
   }
   return items;
@@ -206,6 +281,8 @@ export function rankHeadlines(
       if (it.publishedAt && now - Date.parse(it.publishedAt) > 14 * 24 * 36e5) continue;
       const hay = norm(it.title + " " + it.source);
       if (ex.some((e) => hay.includes(e))) continue;
+      // Somente português do Brasil: descarta veículo estrangeiro e texto em espanhol.
+      if (isForeignDomain(it.domain) || !looksPtBr(it.title + " " + (it.desc || ""))) continue;
       const ageH = it.publishedAt ? Math.max(0, (now - Date.parse(it.publishedAt)) / 36e5) : 168;
       const recency = Math.max(0, 1 - ageH / 168); // 0..1 na janela de 7 dias
       const nt = norm(it.title);
@@ -235,5 +312,5 @@ export function rankHeadlines(
   }
   // Exibição: mais recentes primeiro entre os selecionados
   picked.sort((x, y) => Date.parse(y.publishedAt || "0") - Date.parse(x.publishedAt || "0"));
-  return picked.map(({ tk: _tk, ...rest }) => rest);
+  return picked.map(({ tk: _tk, desc: _d, ...rest }) => rest);
 }
