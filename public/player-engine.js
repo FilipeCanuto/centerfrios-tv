@@ -260,6 +260,7 @@
     setInterval(tickClock, 1000);
     setInterval(dailyReload, 60000);
     setInterval(flushPlays, PLAY_FLUSH_MS);
+    setInterval(checkVersion, VERSION_MS);
   }
 
   /* ---------------- heartbeat: fire-and-forget, jamais relido ---------------- */
@@ -275,6 +276,45 @@
       _resolution: window.screen.width + "x" + window.screen.height,
       _memory: mem
     }, null);
+  }
+
+  /* ---------------- atualização automática ----------------
+     A cada 5 min lê /player.html (sem cache) e compara o ?v= do engine com o que está rodando.
+     Publicou versão nova -> recarrega ao terminar a mídia atual (no máximo 10 min depois).
+     Assim nenhuma TV fica presa em código antigo até o reload das 3h. */
+  var VERSION_MS = 5 * 60 * 1000, pendingReload = false;
+  function myVersion() {
+    var s = document.getElementsByTagName("script");
+    for (var i = 0; i < s.length; i++) {
+      var m = String(s[i].src || "").match(/player-engine\.js\?v=(\d+)/);
+      if (m) return m[1];
+    }
+    return "";
+  }
+  var runningVersion = "";
+  function checkVersion() {
+    if (pendingReload) return;
+    if (!runningVersion) runningVersion = myVersion();
+    if (!runningVersion) return;
+    var url = "/player.html?t=" + new Date().getTime(), done = false;
+    function got(txt) {
+      if (done) return; done = true;
+      var m = String(txt || "").match(/player-engine\.js\?v=(\d+)/);
+      if (!m || m[1] === runningVersion) return;
+      pendingReload = true;
+      setTimeout(function () { window.location.reload(); }, 10 * 60 * 1000);
+    }
+    try {
+      if (typeof window.fetch === "function") {
+        window.fetch(url, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; })
+          .then(got)["catch"](function () {});
+        return;
+      }
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", url, true);
+      xhr.onreadystatechange = function () { if (xhr.readyState === 4 && xhr.status === 200) got(xhr.responseText); };
+      xhr.send(null);
+    } catch (e) {}
   }
 
   function dailyReload() {
@@ -543,7 +583,6 @@
     });
   }
   function money(v) { return v.toFixed(2).replace(".", ","); }
-  function ddmm(ymd) { var p = String(ymd || "").split("-"); return p.length === 3 ? p[2] + "/" + p[1] : ""; }
   function ymdOffset(days) {
     var d = new Date(new Date().getTime() + days * 86400000);
     return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
@@ -572,12 +611,11 @@
     });
   }
 
-  function showRates(usd, eur, date) {
+  function showRates(usd, eur) {
     var html = "";
     if (usd && isFinite(usd)) html += "<span>US$ " + money(usd) + "</span>";
     if (eur && isFinite(eur)) html += "<span>&euro; " + money(eur) + "</span>";
     if (!html) return;
-    if (ddmm(date)) html += '<span class="lbl">fech. ' + ddmm(date) + "</span>";
     currencyEl.innerHTML = html;
     currencyEl.style.display = "flex";
   }
@@ -586,12 +624,12 @@
     if (!tv || !tv.show_currency) return;
     fetchInfobar(function (data) {
       var r = data && data.rates;
-      if (r) { showRates(r.usd, r.eur, r.date); return; }
+      if (r) { showRates(r.usd, r.eur); return; }
       /* Reserva: BCE (Frankfurter) do dia anterior (a API devolve o último dia útil <= data).
          .dev direto (o .app faz redirect 301 que o Silk não segue bem em fetch). */
       httpGetJson("https://api.frankfurter.dev/v1/" + ymdOffset(-1) + "?from=BRL&to=USD,EUR", function (err, d) {
         if (err || !d || !d.rates) return; // mantém o último valor exibido
-        showRates(d.rates.USD ? 1 / d.rates.USD : 0, d.rates.EUR ? 1 / d.rates.EUR : 0, d.date);
+        showRates(d.rates.USD ? 1 / d.rates.USD : 0, d.rates.EUR ? 1 / d.rates.EUR : 0);
       });
     });
   }
@@ -1131,6 +1169,7 @@
   }
 
   function advance() {
+    if (pendingReload) { try { flushPlays(); } catch (e) {} setTimeout(function () { window.location.reload(); }, 1500); return; }
     if (!playing || isLive) return;
     var n = pickIndex(idx + 1);
     if (n < 0) { failsafeNoItem(); return; }

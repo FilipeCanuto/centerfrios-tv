@@ -149,6 +149,21 @@ const FOREIGN_TLDS = new Set([
   "pt", "es", "mx", "ar", "cl", "co", "pe", "uy", "py", "bo", "ec", "ve", "cr", "gt", "hn", "sv", "ni",
   "pa", "do", "cu", "pr", "it", "fr", "de", "uk", "ao", "mz", "cv", "us", "ca", "ch", "be", "nl",
 ]);
+// Veículos de Portugal/estrangeiros que chegam por agregadores (ex.: "Lusa on MSN") sem domínio próprio.
+// Comparação exata com o nome da fonte normalizado (não por trecho, para não pegar "economia" com "ECO").
+const FOREIGN_SOURCES = new Set(
+  [
+    "Lusa", "Agência Lusa", "Público", "Observador", "Expresso", "TVI", "TVI Notícias", "CNN Portugal", "SIC Notícias",
+    "SIC", "RTP", "RTP Notícias", "Jornal de Notícias", "JN", "Correio da Manhã", "CM Jornal", "Diário de Notícias",
+    "DN", "ECO", "Jornal de Negócios", "Negócios", "Dinheiro Vivo", "Jornal Económico", "Sapo",
+    "Notizie.it", "Europa Press", "El País", "Infobae", "Clarín", "La Nación",
+  ].map((s) => norm(s)),
+);
+export function isForeignSource(source: string | undefined): boolean {
+  const s = norm(String(source || "")).replace(/ on msn$/, "").replace(/ via msn$/, "");
+  return FOREIGN_SOURCES.has(s);
+}
+
 export function isForeignDomain(domain: string | undefined): boolean {
   if (!domain) return false;
   const tld = domain.toLowerCase().replace(/\.$/, "").split(".").pop() || "";
@@ -282,7 +297,7 @@ export function rankHeadlines(
       const hay = norm(it.title + " " + it.source);
       if (ex.some((e) => hay.includes(e))) continue;
       // Somente português do Brasil: descarta veículo estrangeiro e texto em espanhol.
-      if (isForeignDomain(it.domain) || !looksPtBr(it.title + " " + (it.desc || ""))) continue;
+      if (isForeignDomain(it.domain) || isForeignSource(it.source) || !looksPtBr(it.title + " " + (it.desc || ""))) continue;
       const ageH = it.publishedAt ? Math.max(0, (now - Date.parse(it.publishedAt)) / 36e5) : 168;
       const recency = Math.max(0, 1 - ageH / 168); // 0..1 na janela de 7 dias
       const nt = norm(it.title);

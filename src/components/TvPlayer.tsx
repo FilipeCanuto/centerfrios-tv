@@ -618,6 +618,33 @@ export function TvPlayer() {
     return () => clearInterval(check);
   }, []);
 
+  // ---------- atualização automática ----------
+  // A cada 5 min lê /player.html (sem cache) e compara o ?v= publicado com o da 1ª leitura.
+  // Mudou (nova publicação) -> recarrega, para esta TV não ficar com código antigo até as 03:00.
+  // Regra do projeto: toda publicação que mexe em qualquer um dos players troca esse ?v=.
+  useEffect(() => {
+    let first = "";
+    let stop = false;
+    async function check() {
+      try {
+        const res = await fetch("/player.html?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const m = (await res.text()).match(/player-engine\.js\?v=(\d+)/);
+        if (!m) return;
+        if (!first) first = m[1];
+        else if (m[1] !== first) window.location.reload();
+      } catch {
+        /* sem rede: tenta no próximo ciclo */
+      }
+    }
+    check();
+    const t = setInterval(check, 5 * 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, []);
+
   const safeIndex = items.length > 0 ? index % items.length : 0;
   const current = items.length ? items[safeIndex] || null : null;
   const nextItem = items.length > 1 ? items[(safeIndex + 1) % items.length] || null : null;
@@ -1793,7 +1820,6 @@ function InfoBar({
   const [isDay, setIsDay] = useState(true);
   const [usd, setUsd] = useState<number | null>(null);
   const [eur, setEur] = useState<number | null>(null);
-  const [ratesDate, setRatesDate] = useState<string>("");
 
   // Fonte principal: /api/public/infobar (temperatura medida no aeroporto de Maceió + PTAX de
   // fechamento do dia útil anterior). Reserva: Open-Meteo / BCE direto do navegador.
@@ -1836,7 +1862,6 @@ function InfoBar({
         if (r && typeof r.usd === "number") {
           setUsd(r.usd);
           setEur(typeof r.eur === "number" ? r.eur : null);
-          setRatesDate(String(r.date || ""));
         } else {
           try {
             const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Maceio" });
@@ -1847,7 +1872,6 @@ function InfoBar({
             const e = d?.rates?.EUR ? 1 / d.rates.EUR : NaN;
             if (isFinite(u)) setUsd(u);
             if (isFinite(e)) setEur(e);
-            setRatesDate(String(d?.date || ""));
           } catch {
             /* mantém o último valor conhecido em vez de sumir da tela */
           }
@@ -1894,11 +1918,6 @@ function InfoBar({
         <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
           {usd !== null ? <span>US$ {usd.toFixed(2).replace(".", ",")}</span> : null}
           {eur !== null ? <span>€ {eur.toFixed(2).replace(".", ",")}</span> : null}
-          {/^\d{4}-\d{2}-\d{2}$/.test(ratesDate) ? (
-            <span style={{ fontSize: "12px", fontWeight: 600, color: "#FFFFFF", opacity: 0.8 }}>
-              fech. {ratesDate.slice(8, 10)}/{ratesDate.slice(5, 7)}
-            </span>
-          ) : null}
         </div>
       ) : null}
     </div>

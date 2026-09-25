@@ -23,7 +23,11 @@ async function getJson(url: string, ms = 7000): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
+    // User-Agent explícito: algumas APIs recusam pedidos sem ele vindos de servidores (Cloudflare Workers).
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: "application/json", "User-Agent": "CenterfriosTV/1.0 (+https://centerfrios-tv.lovable.app)" },
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -83,6 +87,22 @@ async function loadRates(): Promise<Rates | null> {
   return v ?? ratesCache?.v ?? null;
 }
 
+// METAR -> código WMO aproximado (mesma escala do Open-Meteo, usada para escolher o ícone).
+function codeFromMetar(m: any): number | null {
+  const wx = String(m?.wxString || "").toUpperCase();
+  if (/TS/.test(wx)) return 95;
+  if (/SH/.test(wx)) return 80;
+  if (/RA|DZ/.test(wx)) return 61;
+  if (/FG|BR|HZ/.test(wx)) return 45;
+  const covers: string[] = Array.isArray(m?.clouds) ? m.clouds.map((c: any) => String(c?.cover || "")) : [];
+  const cover = String(m?.cover || covers[covers.length - 1] || "").toUpperCase();
+  if (/OVC|BKN/.test(cover) || covers.some((c) => /OVC|BKN/.test(c))) return 3;
+  if (/SCT/.test(cover)) return 2;
+  if (/FEW/.test(cover)) return 1;
+  if (/CLR|SKC|CAVOK|NSC|NCD/.test(cover) || /CAVOK/.test(String(m?.rawOb || ""))) return 0;
+  return null;
+}
+
 async function loadWeather(): Promise<Weather | null> {
   if (weatherCache && Date.now() - weatherCache.at < WEATHER_MS) return weatherCache.v;
   const [metar, om] = await Promise.all([
@@ -93,8 +113,14 @@ async function loadWeather(): Promise<Weather | null> {
     ),
   ]);
   const cur = om?.current;
-  const code = typeof cur?.weather_code === "number" ? cur.weather_code : null;
-  const isDay = cur?.is_day === 0 ? false : true;
+  const obs0 = Array.isArray(metar) && metar.length ? metar[0] : null;
+  // Ícone: código WMO do Open-Meteo; se ele falhar, deriva do METAR (tempo presente + nuvens).
+  let code: number | null = typeof cur?.weather_code === "number" ? cur.weather_code : null;
+  if (code === null && obs0) code = codeFromMetar(obs0);
+  if (code === null && weatherCache?.v.code != null) code = weatherCache.v.code;
+  const hourLocal = Number(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hour12: false }).format(new Date()));
+  const isDayFallback = hourLocal >= 5 && hourLocal < 18; // Maceió: sol ~5h-17h30 o ano todo
+  const isDay = cur?.is_day === 0 ? false : cur?.is_day === 1 ? true : isDayFallback;
   let v: Weather | null = null;
   const obs = Array.isArray(metar)
     ? metar
