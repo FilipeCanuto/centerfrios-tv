@@ -4,6 +4,7 @@ import { useNewsTicker } from "@/lib/news-ticker";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BRAND,
+  DELIVERY_GRACE_MS,
   LOGO_URL,
   TV_SELECT_COLUMNS_FULL,
   TV_SELECT_COLUMNS_LEGACY,
@@ -33,7 +34,11 @@ type Status = "boot" | "connecting" | "pairing" | "playing" | "empty";
 type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
 const MANIFEST_KEY = "playlist";
-const HEARTBEAT_MS = 8000;
+// Intervalos conservadores (economia de nuvem), iguais ao player do Fire TV (player-engine.js).
+const HEARTBEAT_MS = 60000; // painel considera online se < 150 s
+const TV_GUARD_MS = 30000; // consulta direta da TV (reserva do realtime): comandos/playlist
+const SPOTLIGHT_POLL_MS = 30000; // destaque de foto (só com modo evento)
+const SPOT_SHOW_MS = 10000; // destaque de foto: 10 s na tela (ver DELIVERY_GRACE_MS)
 const METADATA_GUARD_MS = 20000;
 const FADE_MS = 200;
 /* Intervalo mínimo praticável sem abusar de APIs públicas gratuitas.
@@ -495,12 +500,17 @@ export function TvPlayer() {
         if (row && row.frame_data) setLiveFrame(row.frame_data);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "tv_alerts" }, (p) => {
-        const row = p.new as { message?: string; expires_at?: string };
+        const row = p.new as { message?: string; expires_at?: string; created_at?: string };
         if (!row || !row.message) return;
         setAlertMsg(row.message);
-        const ms = row.expires_at
-          ? Math.max(5000, new Date(row.expires_at).getTime() - Date.now())
-          : 20000;
+        // tempo de tela = (expira - criado) - janela de entrega; mínimo 5 s
+        const ms =
+          row.expires_at && row.created_at
+            ? Math.max(
+                5000,
+                new Date(row.expires_at).getTime() - new Date(row.created_at).getTime() - DELIVERY_GRACE_MS,
+              )
+            : 20000;
         setTimeout(() => setAlertMsg(null), Math.min(ms, 120000));
       })
       .subscribe();
@@ -525,15 +535,29 @@ export function TvPlayer() {
         .eq("featured", true)
         .order("created_at", { ascending: false })
         .limit(1);
-      if (stop) return;
+      if (stop || !data) return;
       const row = ((data || []) as unknown as EventPhoto[])[0] || null;
-      setFeatured(row && row.image_url ? row : null);
+      if (!row || !row.image_url) {
+        setFeatured(null);
+        return;
+      }
+      // cada destaque (foto + horário) aparece uma vez por 10 s, contados de quando esta TV o recebeu
+      const key = row.id + "|" + (row.featured_until || "");
+      if (key === shownKey) return;
+      shownKey = key;
+      if (row.featured_until && new Date(row.featured_until).getTime() < Date.now()) return;
+      setFeatured(row);
+      if (hide) clearTimeout(hide);
+      hide = setTimeout(() => setFeatured(null), SPOT_SHOW_MS);
     }
+    let shownKey = "";
+    let hide: ReturnType<typeof setTimeout> | null = null;
     poll();
-    const t = setInterval(poll, 4000);
+    const t = setInterval(poll, SPOTLIGHT_POLL_MS);
     return () => {
       stop = true;
       clearInterval(t);
+      if (hide) clearTimeout(hide);
     };
   }, [tv?.event_mode]);
 
@@ -600,7 +624,7 @@ export function TvPlayer() {
       setTv(row);
       if (structural) refreshTv(id);
       runCommand(row.command);
-    }, 4000);
+    }, TV_GUARD_MS);
 
     return () => {
       clearInterval(interval);

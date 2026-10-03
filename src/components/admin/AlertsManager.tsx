@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { AlertTemplate } from "@/lib/centerfrios";
+import { DELIVERY_GRACE_MS, type AlertTemplate } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +45,8 @@ export function AlertsManager() {
     setBusy(true);
     const { error } = await supabase.from("tv_alerts").insert({
       message: clean,
-      expires_at: new Date(Date.now() + Math.max(5, duration) * 1000).toISOString(),
+      // tempo de tela + janela de entrega (as TVs consultam a cada ~25 s e exibem só o tempo de tela)
+      expires_at: new Date(Date.now() + Math.max(5, duration) * 1000 + DELIVERY_GRACE_MS).toISOString(),
     });
     setBusy(false);
     if (error) {
@@ -53,7 +54,7 @@ export function AlertsManager() {
       return;
     }
     setLastFired(clean);
-    toast.success("Aviso no ar em todas as TVs");
+    toast.success("Aviso enviado — entra em todas as TVs em até 25 segundos");
   }
 
   async function saveTemplate() {

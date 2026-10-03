@@ -57,12 +57,19 @@ export async function loadManifest(key: string): Promise<ResolvedItem[] | null> 
   }
 }
 
+/** YouTube é sempre tocado pela API de iframes: nunca baixar/cachear a URL por fetch. */
+export function isYoutubeMedia(item: { type?: string; url?: string } | null | undefined): boolean {
+  if (!item) return false;
+  return item.type === "youtube" || /(^|\/\/|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)(\/|$)/i.test(item.url || "");
+}
+
 /** Baixa e guarda os arquivos da playlist na Cache API (sem bloquear a exibição). */
 export async function precacheMedia(items: ResolvedItem[]): Promise<void> {
   if (typeof caches === "undefined") return;
   try {
     const cache = await caches.open(CACHE_NAME);
     for (const item of items) {
+      if (isYoutubeMedia(item)) continue;
       try {
         const hit = await cache.match(item.url);
         if (!hit) await cache.add(new Request(item.url, { mode: "cors" }));
@@ -95,7 +102,7 @@ export async function pruneCache(items: ResolvedItem[]): Promise<void> {
 
 /** Resolve uma URL local (blob) quando a mídia está em cache; senão devolve a original. */
 export async function resolveMediaUrl(url: string): Promise<{ src: string; revoke: boolean }> {
-  if (typeof caches === "undefined") return { src: url, revoke: false };
+  if (typeof caches === "undefined" || isYoutubeMedia({ url })) return { src: url, revoke: false };
   try {
     const cache = await caches.open(CACHE_NAME);
     const hit = await cache.match(url);

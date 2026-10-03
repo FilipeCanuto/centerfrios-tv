@@ -30,12 +30,19 @@
   var WEATHER_MS = 5 * 60 * 1000;
   var CURRENCY_MS = 5 * 60 * 1000;
 
-  var POLL_MS = 5000;        // estado da TV
-  var HEARTBEAT_MS = 45000;  // fire-and-forget, NUNCA lido de volta
-  var LIVE_MS = 1000;
-  var ALERT_MS = 6000;
-  var SPOT_MS = 6000;
-  var SPONSOR_MS = 60000;
+  /* Intervalos conservadores para economizar a nuvem (Supabase): ~80% menos consultas.
+     Comandos/playlist chegam em até 20 s; avisos em até 25 s; destaque de foto em até 30 s. */
+  var POLL_MS = 20000;       // estado da TV + comando remoto
+  var HEARTBEAT_MS = 60000;  // fire-and-forget, NUNCA lido de volta (painel: online se < 150 s)
+  var LIVE_MS = 1000;        // só roda durante transmissão ao vivo
+  var ALERT_MS = 25000;
+  var SPOT_MS = 30000;       // só consulta com modo evento ligado
+  var SPONSOR_MS = 60000;    // só consulta com patrocinadores ligados
+  /* Janela de entrega: o painel deixa aviso/destaque disponível por +35 s além do tempo de tela,
+     para a TV que consulta a cada 25-30 s sempre recebê-lo. A TV exibe pelo tempo de tela
+     contado a partir de quando o recebeu (nunca os 35 s extras). Igual no painel e no player React. */
+  var DELIVERY_GRACE_MS = 35000;
+  var SPOT_SHOW_MS = 10000;
   var CANPLAY_TIMEOUT = 6000;
   var STALL_MS = 6000;
   var FADE_MS = 400;
@@ -860,16 +867,21 @@
 
   /* ---------------- avisos / destaque / patrocinadores ---------------- */
   function pollAlerts() {
-    req("GET", "/rest/v1/tv_alerts?select=id,message,expires_at&order=created_at.desc&limit=1", null,
+    req("GET", "/rest/v1/tv_alerts?select=id,message,expires_at,created_at&order=created_at.desc&limit=1", null,
       function (err, rows) {
         if (err || !rows || !rows.length) return;
         var a = rows[0];
         if (!a.message || a.id === lastAlertId) return;
-        var until = a.expires_at ? new Date(a.expires_at).getTime() : 0;
-        if (until && until < new Date().getTime()) return;
         lastAlertId = a.id;
+        /* tempo de tela = (expira - criado) - janela de entrega; mínimo 5 s.
+           Conta a partir de agora (quando esta TV recebeu), não do relógio do servidor. */
+        var span = 20000;
+        if (a.expires_at && a.created_at) {
+          span = new Date(a.expires_at).getTime() - new Date(a.created_at).getTime() - DELIVERY_GRACE_MS;
+          if (!(span >= 5000)) span = 5000;
+        }
         alertMsg.innerHTML = String(a.message).replace(/</g, "&lt;");
-        alertHideAt = until || (new Date().getTime() + 20000);
+        alertHideAt = new Date().getTime() + Math.min(span, 10 * 60 * 1000);
         showEl(alertEl, true);
       });
   }
@@ -878,14 +890,24 @@
     if (!tv || !tv.event_mode) { if (spotlight) { spotlight = null; showEl(spotEl, false); } return; }
     req("GET", "/rest/v1/event_photos?select=id,image_url,featured_until&status=eq.approved" +
       "&featured=is.true&order=created_at.desc&limit=1", null, function (err, rows) {
-      var row = (!err && rows && rows.length) ? rows[0] : null;
-      var now = new Date().getTime();
-      var on = !!(row && row.image_url && (!row.featured_until || new Date(row.featured_until).getTime() > now));
-      if (!on) { spotlight = null; showEl(spotEl, false); return; }
-      if (!spotlight || spotlight.id !== row.id) { spotlight = row; spotImg.src = row.image_url; }
+      if (err) return;                                   /* falha de rede: não mexe na tela */
+      var row = (rows && rows.length) ? rows[0] : null;
+      if (!row || !row.image_url) { spotlight = null; showEl(spotEl, false); return; }
+      /* Cada destaque (foto + horário) aparece UMA vez por 10 s, contados de quando esta TV o
+         recebeu. O painel o mantém disponível por 10 s + janela de entrega. */
+      var key = row.id + "|" + (row.featured_until || "");
+      if (key === spotShownKey) return;
+      spotShownKey = key;
+      /* destaque já vencido (ex.: TV ligou depois): não exibe */
+      if (row.featured_until && new Date(row.featured_until).getTime() < new Date().getTime()) return;
+      spotlight = row;
+      spotImg.src = row.image_url;
       showEl(spotEl, true);
+      clearTimeout(spotTimer);
+      spotTimer = setTimeout(function () { spotlight = null; showEl(spotEl, false); }, SPOT_SHOW_MS);
     });
   }
+  var spotShownKey = "", spotTimer = null;
 
   function loadSponsors() {
     if (!tv || !tv.sponsors_enabled) { showEl(sponsorsEl, false); return; }
@@ -972,6 +994,9 @@
      após 2 falhas seguidas, ficam fora do rodízio por 2 h e depois são testados de novo.
      Assim um vídeo problemático não custa espera/tela parada a cada volta da playlist. */
   var ytFails = {}, ytBadUntil = {}, YT_BAD_MS = 2 * 60 * 60 * 1000;
+  function isYoutubeItem(it) {
+    return !!(it && (it.type === "youtube" || /(^|\/\/|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)(\/|$)/i.test(String(it.url || ""))));
+  }
   function itemYtId(it) {
     return it && (it.type === "youtube" || (it.type !== "image" && ytId(it.url))) ? ytId(it.url) : "";
   }
@@ -1193,7 +1218,8 @@
 
     updateCornerQr();
 
-    if (item.type === "youtube" || (item.type !== "image" && ytId(item.url))) renderYoutube(item, my);
+    /* qualquer link do YouTube vai para a API de iframes (link sem ID válido é pulado lá) */
+    if (isYoutubeItem(item) || (item.type !== "image" && ytId(item.url))) renderYoutube(item, my);
     else if (item.type === "video") renderVideo(item, my);
     else renderImage(item, my);
   }
@@ -1327,6 +1353,8 @@
       });
       return;
     }
+    /* YouTube é SEMPRE da API de iframes: nunca baixar pelo <video>/<img> (link inválido = só pula) */
+    if (isYoutubeItem(next)) return;
     if (next.type === "video") {
       try {
         if (idleVideo.getAttribute("src") !== next.url) {

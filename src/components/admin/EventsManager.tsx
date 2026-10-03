@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { EventExtras } from "@/components/admin/EventExtras";
-import type { EventPhoto } from "@/lib/centerfrios";
+import { DELIVERY_GRACE_MS, type EventPhoto } from "@/lib/centerfrios";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -114,14 +114,15 @@ export function EventsManager({ onChanged }: { onChanged?: () => void }) {
       .update({
         featured: true,
         status: "approved",
-        featured_until: new Date(Date.now() + 10000).toISOString(),
+        // 10 s na tela + janela de entrega (as TVs consultam a cada ~30 s e exibem só 10 s)
+        featured_until: new Date(Date.now() + 10000 + DELIVERY_GRACE_MS).toISOString(),
       })
       .eq("id", photo.id);
     if (error) {
       toast.error("Não foi possível destacar");
       return;
     }
-    toast.success("Foto em destaque por 10 segundos nas TVs");
+    toast.success("Foto em destaque por 10 segundos — entra nas TVs em até 30 segundos");
     load();
   }
 
