@@ -22,7 +22,6 @@ export function LiveBroadcast() {
     const { data } = await supabase
       .from("tvs")
       .select("*")
-      .eq("is_paired", true)
       .order("created_at", { ascending: true });
     setTvs((data || []) as unknown as TvRow[]);
   }
