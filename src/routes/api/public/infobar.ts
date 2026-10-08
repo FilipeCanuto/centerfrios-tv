@@ -17,7 +17,7 @@ type Rates = { usd: number; eur: number; date: string; source: string };
 let weatherCache: { at: number; v: Weather } | null = null;
 let ratesCache: { at: number; key: string; v: Rates } | null = null;
 const WEATHER_MS = 10 * 60 * 1000;
-const RATES_MS = 30 * 60 * 1000;
+const RATES_MS = 5 * 60 * 1000; // cotação ao vivo: 5 min de cache protege a rota e a AwesomeAPI
 
 async function getJson(url: string, ms = 7000): Promise<any> {
   const ctrl = new AbortController();
@@ -67,11 +67,34 @@ async function ptaxClose(moeda: "USD" | "EUR", today: string): Promise<{ v: numb
   return closes.length ? closes[closes.length - 1] : null;
 }
 
+// Dia da semana em Maceió (0 = domingo, 6 = sábado).
+function weekdayLocal(d = new Date()): number {
+  const w = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(d);
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(w);
+}
+
+// Cotação comercial AO VIVO (AwesomeAPI, preço de venda). Só vale em dia útil e se a cotação
+// for recente (< 18 h): em fim de semana/feriado a API repete um valor velho -> usa o fechamento.
+async function liveRates(): Promise<Rates | null> {
+  const wd = weekdayLocal();
+  if (wd === 0 || wd === 6) return null;
+  const j = await getJson("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL");
+  const u = Number(j?.USDBRL?.ask), e = Number(j?.EURBRL?.ask);
+  const ts = Number(j?.USDBRL?.timestamp) * 1000;
+  if (!(u > 0) || !(e > 0) || !(ts > 0) || Date.now() - ts > 18 * 3600 * 1000) return null;
+  return { usd: u, eur: e, date: ymdLocal(new Date(ts)), source: "AwesomeAPI (comercial ao vivo)" };
+}
+
 async function loadRates(): Promise<Rates | null> {
   const today = ymdLocal();
   if (ratesCache && ratesCache.key === today && Date.now() - ratesCache.at < RATES_MS) return ratesCache.v;
+  let v: Rates | null = await liveRates();
+  if (v) {
+    ratesCache = { at: Date.now(), key: today, v };
+    return v;
+  }
+  // Fim de semana, feriado ou AwesomeAPI fora do ar: último fechamento PTAX válido (Banco Central).
   const [usd, eur] = await Promise.all([ptaxClose("USD", today), ptaxClose("EUR", today)]);
-  let v: Rates | null = null;
   if (usd && eur) v = { usd: usd.v, eur: eur.v, date: usd.date, source: "PTAX/BCB" };
   else {
     // Reserva: BCE (Frankfurter) do dia útil anterior. A API devolve o último dia com cotação <= data pedida.
@@ -141,10 +164,16 @@ export const Route = createFileRoute("/api/public/infobar")({
   server: {
     handlers: {
       GET: async () => {
-        const [weather, rates] = await Promise.all([loadWeather(), loadRates()]);
+        const [weather, rates] = await Promise.all([
+          loadWeather().catch(() => weatherCache?.v ?? null),
+          loadRates().catch(() => ratesCache?.v ?? null),
+        ]);
+        // serverTime (ms UTC) é medido no fim, logo antes de responder: as TVs usam para acertar
+        // o relógio (o Fire TV pode estar em UTC ou com hora errada). Fuso fixo de Maceió: UTC-3.
+        const now = Date.now();
         return Response.json(
-          { weather, rates, updatedAt: new Date().toISOString() },
-          { headers: { "Cache-Control": "public, max-age=60" } },
+          { weather, rates, serverTime: now, utcOffsetMin: -180, updatedAt: new Date(now).toISOString() },
+          { headers: { "Cache-Control": "no-store" } },
         );
       },
     },

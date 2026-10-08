@@ -2,6 +2,7 @@
 // e expõe useNewsTicker() com a lista pronta para rotação (manchetes + texto manual intercalado).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readCache, writeCache, type NewsTickerItem } from "@/lib/centerfrios";
+import { maceioNow } from "@/lib/tv-clock";
 
 const CACHE_KEY = "cf_news_cache";
 const PROMO_EVERY = 4; // texto manual a cada N manchetes
@@ -40,7 +41,7 @@ export function interleaveManual(
   const out: NewsTickerItem[] = [];
   const m = (manual || "").trim();
   if (m) out.push({ text: m, source: "", promo: true });
-  out.push({ text: CF_TIPS[Math.floor(Date.now() / 86400000) % CF_TIPS.length], source: "", promo: true });
+  out.push({ text: CF_TIPS[maceioNow().dayIndex % CF_TIPS.length], source: "", promo: true });
   headlines.forEach((h, i) => {
     out.push({ text: h.text, source: h.source });
     if (m && (i + 1) % PROMO_EVERY === 0 && i + 1 < headlines.length) {

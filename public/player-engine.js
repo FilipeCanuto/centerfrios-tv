@@ -119,6 +119,22 @@
   function clearAllTimers() { clearTimer("item"); clearTimer("stall"); clearTimer("hard"); clearTimer("canplay"); clearTimer("ytpoll"); }
   function diag(msg) { diagEl.innerHTML = msg || ""; }
 
+  /* ---------------- hora certa (independe do relógio/fuso do aparelho) ----------------
+     O Fire TV pode estar em UTC ou com a hora errada. clockOffset = hora do servidor - hora local,
+     medido em /api/public/infobar (serverTime). nowMs() = agora em UTC "de verdade".
+     cfNow() = Date cujos campos UTC são a hora de Maceió (UTC-3, sem horário de verão):
+     SEMPRE ler com getUTCHours/getUTCMinutes/getUTCDay/getUTCDate/getUTCMonth/getUTCFullYear. */
+  var clockOffset = 0, clockSynced = false;
+  var CF_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
+  function nowMs() { return new Date().getTime() + clockOffset; }
+  function cfNow() { return new Date(nowMs() + CF_UTC_OFFSET_MS); }
+  function cfYmd(d) { return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate()); }
+  function syncClock(serverTime, t0, t1) {
+    if (typeof serverTime !== "number" || !(serverTime > 0) || t1 - t0 > 10000) return; /* resposta lenta: ignora */
+    clockOffset = serverTime + (t1 - t0) / 2 - t1;   /* meio do caminho da requisição */
+    clockSynced = true;
+  }
+
   function cookieGet(name) {
     try {
       var parts = String(document.cookie || "").split(";");
@@ -268,6 +284,10 @@
     setInterval(dailyReload, 60000);
     setInterval(flushPlays, PLAY_FLUSH_MS);
     setInterval(checkVersion, VERSION_MS);
+    /* hora certa: acerta já no início e a cada 30 min, mesmo com clima/cotação desligados
+       (a rota tem cache no servidor; a resposta do clima/cotação é reaproveitada) */
+    try { fetchInfobar(function () { updateNewsClock(); }); } catch (e) {}
+    setInterval(function () { fetchInfobar(function () {}); }, 30 * 60 * 1000);
   }
 
   /* ---------------- heartbeat: fire-and-forget, jamais relido ---------------- */
@@ -325,8 +345,9 @@
   }
 
   function dailyReload() {
-    var d = new Date();
-    if (d.getHours() === 3 && d.getMinutes() === 0) window.location.reload();
+    if (!clockSynced) return;                   /* sem hora confiável, não arrisca reload fora de hora */
+    var d = cfNow();
+    if (d.getUTCHours() === 3 && d.getUTCMinutes() === 0) window.location.reload();
   }
 
   /* ---------------- polling do estado da TV ---------------- */
@@ -584,15 +605,16 @@
     }
     setTimeout(function () { finish(null); }, 20000);  /* servidor não respondeu: usa a reserva */
     httpGetJson("/api/public/infobar?t=" + now, function (err, data) {
-      if (!err && data && (data.weather || data.rates)) { infobarData = data; infobarAt = new Date().getTime(); }
+      var t1 = new Date().getTime();
+      if (!err && data) syncClock(data.serverTime, now, t1);     /* acerta o relógio da TV */
+      if (!err && data && (data.weather || data.rates)) { infobarData = data; infobarAt = t1; }
       else data = null;
       finish(data);
     });
   }
   function money(v) { return v.toFixed(2).replace(".", ","); }
   function ymdOffset(days) {
-    var d = new Date(new Date().getTime() + days * 86400000);
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    return cfYmd(new Date(cfNow().getTime() + days * 86400000));
   }
 
   function showWeather(temp, code, isDay) {
@@ -689,7 +711,7 @@
   var HOT_MSG = "CALOR FORTE EM MACEI\u00d3: proteja seus produtos \u2014 c\u00e2maras frias e balc\u00f5es refrigerados CENTERFRIOS, com frete gr\u00e1tis em todo o estado.";
   function extraPromos() {
     var out = [];
-    var day = Math.floor(new Date().getTime() / 86400000);
+    var day = Math.floor(cfNow().getTime() / 86400000);   /* dica muda à meia-noite de Maceió */
     out.push(CF_TIPS[day % CF_TIPS.length]);
     if (lastTempC !== null && lastTempC >= 30) out.push(HOT_MSG);
     return out;
@@ -741,7 +763,7 @@
   }
 
   function updateNewsClock() {
-    var d = new Date(), hh = d.getHours(), mm = d.getMinutes();
+    var d = cfNow(), hh = d.getUTCHours(), mm = d.getUTCMinutes();   /* hora de Maceió */
     tickerClock.innerHTML = (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
   }
   /* Vigia: se o timer de 30 min atrasar/parar (Silk pode segurar timers), força a atualização. */
@@ -840,16 +862,17 @@
 
   function tickClock() {
     if (!tv) return;
-    var now = new Date().getTime();
+    var now = new Date().getTime();             /* relógio local: só para alertHideAt (relativo) */
+    var srvNow = nowMs();                       /* hora certa: compara com horários do servidor */
 
     // boas-vindas
     var welcomeOn = !!(tv.welcome_message && tv.welcome_until &&
-      new Date(tv.welcome_until).getTime() > now);
+      new Date(tv.welcome_until).getTime() > srvNow);
     if (welcomeOn) welcomeMsg.innerHTML = String(tv.welcome_message).replace(/</g, "&lt;");
     showEl(welcomeEl, welcomeOn);
 
     // cronômetro
-    var ms = tv.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
+    var ms = tv.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - srvNow : -1;
     if (ms > 0) {
       var total = Math.floor(ms / 1000);
       var mm = String(Math.floor(total / 60)); while (mm.length < 2) mm = "0" + mm;
@@ -899,7 +922,7 @@
       if (key === spotShownKey) return;
       spotShownKey = key;
       /* destaque já vencido (ex.: TV ligou depois): não exibe */
-      if (row.featured_until && new Date(row.featured_until).getTime() < new Date().getTime()) return;
+      if (row.featured_until && new Date(row.featured_until).getTime() < nowMs()) return;
       spotlight = row;
       spotImg.src = row.image_url;
       showEl(spotEl, true);
@@ -965,17 +988,17 @@
   function itemActive(it) {
     var sc = it && it.sched;
     if (!sc) return true;
-    var d = new Date();
-    var today = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    var d = cfNow();                            /* agenda sempre na hora de Maceió */
+    var today = cfYmd(d);
     if (sc.from && today < sc.from) return false;
     if (sc.until && today > sc.until) return false;
     if (sc.days && sc.days.length) {
       var ok = false;
-      for (var i = 0; i < sc.days.length; i++) if (sc.days[i] === d.getDay()) ok = true;
+      for (var i = 0; i < sc.days.length; i++) if (sc.days[i] === d.getUTCDay()) ok = true;
       if (!ok) return false;
     }
     if (sc.start || sc.end) {
-      var hm = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      var hm = pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes());
       var st = sc.start || "00:00", en = sc.end || "23:59";
       if (st <= en) { if (hm < st || hm > en) return false; }
       else if (hm < st && hm > en) return false; /* janela que cruza a meia-noite */

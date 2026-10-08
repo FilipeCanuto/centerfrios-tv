@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useNewsTicker } from "@/lib/news-ticker";
+import { fetchInfobarAndSync, isTvClockSynced, maceioHHMM, maceioNow, tvNow } from "@/lib/tv-clock";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BRAND,
@@ -118,7 +119,7 @@ export function TvPlayer() {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [featured, setFeatured] = useState<EventPhoto | null>(null);
   const [sponsors, setSponsors] = useState<EventSponsor[]>([]);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => tvNow());
   const [buffering, setBuffering] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
@@ -144,7 +145,13 @@ export function TvPlayer() {
 
   // relógio compartilhado (cronômetro / destaque / vinheta)
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(tvNow()), 1000); // hora certa (servidor), não a do aparelho
+    return () => clearInterval(t);
+  }, []);
+  // acerta o relógio pelo servidor no início e a cada 30 min (mesmo com clima/cotação desligados)
+  useEffect(() => {
+    fetchInfobarAndSync();
+    const t = setInterval(fetchInfobarAndSync, 30 * 60 * 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -545,7 +552,7 @@ export function TvPlayer() {
       const key = row.id + "|" + (row.featured_until || "");
       if (key === shownKey) return;
       shownKey = key;
-      if (row.featured_until && new Date(row.featured_until).getTime() < Date.now()) return;
+      if (row.featured_until && new Date(row.featured_until).getTime() < tvNow()) return;
       setFeatured(row);
       if (hide) clearTimeout(hide);
       hide = setTimeout(() => setFeatured(null), SPOT_SHOW_MS);
@@ -636,8 +643,9 @@ export function TvPlayer() {
   // ---------- reload preventivo diário às 03:00 ----------
   useEffect(() => {
     const check = setInterval(() => {
-      const d = new Date();
-      if (d.getHours() === 3 && d.getMinutes() === 0) window.location.reload();
+      if (!isTvClockSynced()) return; // sem hora confiável, não arrisca reload fora de hora
+      const d = maceioNow();
+      if (d.h === 3 && d.m === 0) window.location.reload();
     }, 60000);
     return () => clearInterval(check);
   }, []);
@@ -1853,8 +1861,7 @@ function InfoBar({
     async function load() {
       let data: any = null;
       try {
-        const res = await fetch("/api/public/infobar?t=" + Date.now(), { cache: "no-store" });
-        if (res.ok) data = await res.json();
+        data = await fetchInfobarAndSync(); // também acerta o relógio da TV
       } catch {
         data = null;
       }
@@ -2165,6 +2172,5 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
 }
 
 function hhmm(): string {
-  const d = new Date();
-  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  return maceioHHMM(); // sempre hora de Maceió, independente do fuso do aparelho
 }
