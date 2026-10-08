@@ -23,6 +23,9 @@
      tem, a consulta falha: cai para TV_COLS e re-tenta a completa a cada 10 min. */
   var TV_COLS_NEWS = ",show_logo,logo_size,show_news_ticker,news_queries,news_exclude,news_interval_min";
   var useNewsCols = true, newsColsRetryAt = 0;
+  /* Colunas do Endomarketing (migration 20261008150000): mesma estratégia de reserva. */
+  var TV_COLS_ENDO = ",is_endomarketing_active,endomarketing_state";
+  var useEndoCols = true, endoColsRetryAt = 0;
   var NEWS_PROMO_EVERY = 4;
 
   /* A estação do aeroporto (METAR) mede de hora em hora e a PTAX de fechamento sai 1x/dia:
@@ -329,7 +332,9 @@
       var m = String(txt || "").match(/player-engine\.js\?v=(\d+)/);
       if (!m || m[1] === runningVersion) return;
       pendingReload = true;
-      setTimeout(function () { window.location.reload(); }, 10 * 60 * 1000);
+      /* reserva: recarrega em 10 min, mas nunca no meio de uma atividade de Endomarketing */
+      var tryReload = function () { if (endoActive) { setTimeout(tryReload, 60000); return; } window.location.reload(); };
+      setTimeout(tryReload, 10 * 60 * 1000);
     }
     try {
       if (typeof window.fetch === "function") {
@@ -351,11 +356,23 @@
   }
 
   /* ---------------- polling do estado da TV ---------------- */
+  /* resposta de erro do PostgREST = coluna inexistente / sem permissão (migration não aplicada) */
+  function colsMissing(body) { return !!(body && (body.code === "42703" || body.code === "42501")); }
+
   function pollTv() {
     if (!tvId) return;
-    if (!useNewsCols && newsColsRetryAt && new Date().getTime() > newsColsRetryAt) { useNewsCols = true; newsColsRetryAt = 0; }
-    var wantNews = useNewsCols;
-    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS + (wantNews ? TV_COLS_NEWS : ""), null, function (err, rows) {
+    var t = new Date().getTime();
+    if (!useNewsCols && newsColsRetryAt && t > newsColsRetryAt) { useNewsCols = true; newsColsRetryAt = 0; }
+    if (!useEndoCols && endoColsRetryAt && t > endoColsRetryAt) { useEndoCols = true; endoColsRetryAt = 0; }
+    var wantNews = useNewsCols, wantEndo = useNewsCols && useEndoCols;
+    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS + (wantNews ? TV_COLS_NEWS : "") +
+      (wantEndo ? TV_COLS_ENDO : ""), null, function (err, rows) {
+      if (err && wantEndo && colsMissing(rows)) {
+        /* colunas do Endomarketing ainda não existem: segue sem elas e re-tenta em 10 min */
+        useEndoCols = false; endoColsRetryAt = new Date().getTime() + 10 * 60 * 1000;
+        pollTv();
+        return;
+      }
       if (err && wantNews) {
         req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS, null, function (err2, rows2) {
           if (err2 || !rows2 || !rows2.length) { diag("sem conexao"); return; }
@@ -388,7 +405,10 @@
       if (sig !== lastTvSig) { lastTvSig = sig; applyLayout(row); ytApplyAudio(activeYt); }
 
       setLive(!!row.is_live_active);
-      if (isLive) return;
+      if (isLive) { if (endoActive) endoExit(); return; }
+
+      /* Endomarketing tem prioridade sobre a playlist (o ao vivo tem prioridade sobre ele) */
+      endoApplyRow(row);
 
       var structural = !prev || prev.playlist_id !== row.playlist_id ||
         prev.event_mode !== row.event_mode || prev.is_paired !== row.is_paired;
@@ -954,6 +974,178 @@
       });
   }
 
+  /* ---------------- Endomarketing (MKT & RH): vídeo do YouTube controlado ao vivo ----------------
+     O painel grava tvs.is_endomarketing_active + tvs.endomarketing_state. A TV:
+     - entra no modo em até POLL_MS (20 s) e, enquanto ativo, consulta SÓ o estado a cada ENDO_POLL_MS;
+     - pausa a playlist e mostra um player YouTube próprio (#endo), separado do double buffer;
+     - converge continuamente para playing/volume/isMuted/loop/fullscreen;
+     - aplica UMA vez por nonce: troca de vídeo e "voltar ao início" (seekTo currentTime);
+     - ao desativar, destrói o player e retoma a playlist de onde estava.
+     Sem WebSocket (polling simples, como todo o engine). */
+  var ENDO_POLL_MS = 2000;
+  var endoEl = $("endo"), endoTitleEl = $("endo-title"), endoEndEl = $("endo-end");
+  var endoActive = false, endoTimer = null, endoTitleTimer = null;
+  var endoYt = { player: null, ready: false, videoId: "" };
+  var endoApplied = { nonce: "", volume: -1, muted: null, fullscreen: null };
+  var endoState = null, endoEnded = false;
+
+  function endoValid(st) { return !!(st && typeof st === "object" && ytId(st.videoId || "")); }
+
+  /* chamada a cada leitura da linha da TV (poll normal ou rápido) */
+  function endoApplyRow(row) {
+    var st = row && row.endomarketing_state;
+    if (row && row.is_endomarketing_active && endoValid(st)) {
+      if (!endoActive) endoEnter();
+      endoState = st;
+      endoSync();
+    } else if (endoActive) {
+      endoExit();
+    }
+  }
+
+  function endoEnter() {
+    endoActive = true;
+    stopPlayback();                        /* pausa a playlist (libera decodificador e iframes) */
+    screenMode("");
+    endoEnded = false;
+    endoApplied = { nonce: "", volume: -1, muted: null, fullscreen: null };
+    showEl(endoEl, true);
+    showEl(endoEndEl, false);
+    if (endoTimer) clearInterval(endoTimer);
+    endoTimer = setInterval(endoPoll, ENDO_POLL_MS);
+  }
+
+  function endoExit() {
+    endoActive = false;
+    if (endoTimer) { clearInterval(endoTimer); endoTimer = null; }
+    if (endoTitleTimer) { clearTimeout(endoTitleTimer); endoTitleTimer = null; }
+    if (endoYt.player) { try { endoYt.player.destroy(); } catch (e) {} }
+    endoYt = { player: null, ready: false, videoId: "" };
+    $("endo-video").innerHTML = '<div id="endo-holder"></div>';
+    endoState = null;
+    showEl(endoTitleEl, false);
+    showEl(endoEndEl, false);
+    showEl(endoEl, false);
+    if (items.length) startLoop();         /* volta para a programação normal */
+  }
+
+  /* consulta rápida: só as 2 colunas do modo, enquanto ele estiver ativo */
+  function endoPoll() {
+    if (!tvId || !endoActive) return;
+    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=is_endomarketing_active,endomarketing_state", null,
+      function (err, rows) {
+        if (err || !rows || !rows.length || !endoActive) return;   /* falha de rede: mantém como está */
+        if (tv) { tv.is_endomarketing_active = rows[0].is_endomarketing_active; tv.endomarketing_state = rows[0].endomarketing_state; }
+        endoApplyRow(rows[0]);
+      });
+  }
+
+  function endoCreate(videoId) {
+    if (endoYt.player) { try { endoYt.player.destroy(); } catch (e) {} }
+    $("endo-video").innerHTML = '<div id="endo-holder"></div>';
+    endoYt = { player: null, ready: false, videoId: videoId };
+    whenYtReady(function () {
+      if (!endoActive || endoYt.videoId !== videoId) return;
+      try {
+        endoYt.player = new window.YT.Player("endo-holder", {
+          videoId: videoId, width: "100%", height: "100%",
+          playerVars: {
+            autoplay: endoState && endoState.playing ? 1 : 0, controls: 0, modestbranding: 1, rel: 0,
+            playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3,
+            origin: window.location.protocol + "//" + window.location.host,
+            widget_referrer: window.location.href
+          },
+          events: {
+            onReady: function () {
+              endoYt.ready = true;
+              endoApplied.volume = -1; endoApplied.muted = null;   /* reaplica áudio no player novo */
+              endoSync();
+            },
+            onStateChange: function (e) {
+              var S = window.YT && window.YT.PlayerState;
+              if (!S || !endoActive) return;
+              if (e.data === S.ENDED) endoOnEnded();
+              else if (e.data === S.PLAYING) { endoEnded = false; showEl(endoEndEl, false); }
+            },
+            onError: function () { diag("endo: video indisponivel"); endoEnded = true; showEl(endoEndEl, true); }
+          }
+        });
+      } catch (e) { endoYt.player = null; }
+    });
+  }
+
+  function endoOnEnded() {
+    if (endoState && endoState.loop) {
+      try { endoYt.player.seekTo(0, true); endoYt.player.playVideo(); } catch (e) {}
+      return;
+    }
+    endoEnded = true;                      /* sem loop: mostra a tela institucional até o próximo comando */
+    showEl(endoEndEl, true);
+  }
+
+  function endoShowTitle(txt) {
+    if (endoTitleTimer) { clearTimeout(endoTitleTimer); endoTitleTimer = null; }
+    if (!txt) { showEl(endoTitleEl, false); return; }
+    endoTitleEl.innerHTML = esc(txt);
+    showEl(endoTitleEl, true);
+    endoTitleTimer = setTimeout(function () { showEl(endoTitleEl, false); }, 8000);
+  }
+
+  /* converge o player para endoState */
+  function endoSync() {
+    var st = endoState;
+    if (!endoActive || !st) return;
+    var vid = ytId(st.videoId);
+
+    /* tela cheia total x área da mídia (mantém rodapé/barra institucional) */
+    var fs = !!st.fullscreen;
+    if (endoApplied.fullscreen !== fs) {
+      endoApplied.fullscreen = fs;
+      endoEl.className = fs ? "full-on" : "";
+      if (!fs) { endoEl.style.top = zone.style.top || "0px"; endoEl.style.bottom = zone.style.bottom || "0px"; }
+      else { endoEl.style.top = "0px"; endoEl.style.bottom = "0px"; }
+    } else if (!fs) {
+      endoEl.style.top = zone.style.top || "0px"; endoEl.style.bottom = zone.style.bottom || "0px";
+    }
+
+    /* comando pontual (nonce novo): troca de vídeo ou volta à posição pedida */
+    var newNonce = String(st.nonce || "") !== endoApplied.nonce;
+    if (newNonce) {
+      endoApplied.nonce = String(st.nonce || "");
+      endoEnded = false;
+      showEl(endoEndEl, false);
+      endoShowTitle(st.momentTitle || "");
+      if (endoYt.videoId !== vid || !endoYt.player) { endoCreate(vid); return; }
+      /* currentTime >= 0: vai para essa posição (0 = início); negativo: só libera um vídeo que terminou */
+      var ct = Number(st.currentTime);
+      if (endoYt.ready && ct >= 0) { try { endoYt.player.seekTo(ct, true); } catch (e) {} }
+      if (endoYt.ready && st.playing) { try { endoYt.player.playVideo(); } catch (e) {} }
+    }
+    if (endoYt.videoId !== vid) { endoCreate(vid); return; }
+    if (!endoYt.player || !endoYt.ready) return;
+    var p = endoYt.player, S = window.YT && window.YT.PlayerState;
+
+    /* áudio: volume 0-100 e mudo (caixa de som Bluetooth do Fire TV) */
+    var vol = Math.max(0, Math.min(100, Math.round(Number(st.volume))));
+    if (isNaN(vol)) vol = 80;
+    if (endoApplied.volume !== vol) { endoApplied.volume = vol; try { p.setVolume(vol); } catch (e) {} }
+    var muted = !!st.isMuted;
+    if (endoApplied.muted !== muted) { endoApplied.muted = muted; try { if (muted) p.mute(); else p.unMute(); } catch (e) {} }
+
+    /* play/pause (não reinicia sozinho um vídeo que terminou sem loop) */
+    var s = -9;
+    try { s = p.getPlayerState(); } catch (e) {}
+    if (!S) return;
+    if (st.playing) {
+      if (!endoEnded && s !== S.PLAYING && s !== S.BUFFERING) { try { p.playVideo(); } catch (e) {} }
+    } else if (s === S.PLAYING || s === S.BUFFERING) {
+      try { p.pauseVideo(); } catch (e) {}
+    }
+    /* ENDED que o evento não avisou (Silk): leitura direta. Logo após um comando o estado
+       ainda pode ser o antigo (ENDED): não conclui "terminou" nessa mesma leitura. */
+    if (s === S.ENDED && !endoEnded && !newNonce) endoOnEnded();
+  }
+
   /* ---------------- modo ao vivo ---------------- */
   function setLive(on) {
     if (on === isLive) return;
@@ -1108,6 +1300,11 @@
     }
 
     function apply() {
+      /* durante o Endomarketing: só guarda a playlist nova; a tela é do modo */
+      if (endoActive) {
+        if (resolved.length) { items = resolved; idx = 0; lastSignature = ""; lsSet(K_PL, JSON.stringify(resolved)); }
+        return;
+      }
       if (!resolved.length) {
         if (items.length) { startLoop(); return; }
         stopPlayback();
@@ -1209,7 +1406,7 @@
   }
 
   function startLoop() {
-    if (isLive || !items.length) return;
+    if (isLive || endoActive || !items.length) return;
     screenMode("");
     if (playing) return;
     playing = true;
@@ -1226,7 +1423,7 @@
   }
 
   function render() {
-    if (isLive || !items.length) return;
+    if (isLive || endoActive || !items.length) return;
     clearAllTimers();
     token++;
     var my = token;

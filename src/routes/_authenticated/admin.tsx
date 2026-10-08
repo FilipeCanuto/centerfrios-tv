@@ -10,6 +10,7 @@ import { LiveBroadcast } from "@/components/admin/LiveBroadcast";
 import { EventsManager } from "@/components/admin/EventsManager";
 import { AlertsManager } from "@/components/admin/AlertsManager";
 import { PresenceManager } from "@/components/admin/PresenceManager";
+import { EndomarketingManager } from "@/components/admin/EndomarketingManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ import {
   PartyPopper,
   Megaphone,
   QrCode,
+  HeartHandshake,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -157,7 +159,7 @@ function AdminPage() {
           </div>
 
           <Tabs defaultValue="tvs" className="mt-6">
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm sm:grid-cols-7">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-card p-1 shadow-sm sm:grid-cols-4 lg:grid-cols-8">
               <TabsTrigger value="tvs" className={TAB_TRIGGER}>
                 <MonitorPlay className="h-4 w-4" /> TVs <Badge value={counts.tvs} />
               </TabsTrigger>
@@ -178,6 +180,9 @@ function AdminPage() {
               </TabsTrigger>
               <TabsTrigger value="events" className={TAB_TRIGGER}>
                 <PartyPopper className="h-4 w-4" /> Eventos <Badge value={counts.pending} />
+              </TabsTrigger>
+              <TabsTrigger value="endo" className={TAB_TRIGGER}>
+                <HeartHandshake className="h-4 w-4" /> Endomarketing
               </TabsTrigger>
             </TabsList>
 
@@ -201,6 +206,9 @@ function AdminPage() {
             </TabsContent>
             <TabsContent value="events" className="mt-5">
               <EventsManager onChanged={refreshCounts} />
+            </TabsContent>
+            <TabsContent value="endo" className="mt-5">
+              <EndomarketingManager />
             </TabsContent>
           </Tabs>
         </main>

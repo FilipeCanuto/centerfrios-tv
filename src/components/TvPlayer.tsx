@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useNewsTicker } from "@/lib/news-ticker";
+import { EndoPlayer } from "@/components/EndoPlayer";
 import { fetchInfobarAndSync, isTvClockSynced, maceioHHMM, maceioNow, tvNow } from "@/lib/tv-clock";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BRAND,
   DELIVERY_GRACE_MS,
   LOGO_URL,
+  TV_SELECT_COLUMNS_ENDO,
   TV_SELECT_COLUMNS_FULL,
   TV_SELECT_COLUMNS_LEGACY,
   type NewsTickerItem,
@@ -49,7 +51,14 @@ const FADE_MS = 200;
 // Migration do rodapé de notícias pode ainda não estar aplicada: se a consulta completa
 // falhar por coluna inexistente, cai para as colunas antigas (e lembra da escolha).
 let useLegacyTvColumns = false;
+// Endomarketing: se as colunas ainda não existem no banco, cai para FULL e re-tenta em 10 min.
+let endoColsRetryAt = 0;
 async function queryTv(id: string) {
+  if (!useLegacyTvColumns && Date.now() >= endoColsRetryAt) {
+    const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_ENDO).eq("id", id).maybeSingle();
+    if (!r.error) return r;
+    endoColsRetryAt = Date.now() + 10 * 60 * 1000;
+  }
   if (!useLegacyTvColumns) {
     const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_FULL).eq("id", id).maybeSingle();
     if (!r.error) return r;
@@ -640,6 +649,36 @@ export function TvPlayer() {
     };
   }, [refreshTv, runCommand]);
 
+  // ---------- Endomarketing: consulta rápida (reserva do realtime) enquanto o modo estiver ativo ----------
+  const endoActiveFlag = !!tv?.is_endomarketing_active;
+  useEffect(() => {
+    if (!endoActiveFlag) return;
+    let stop = false;
+    const t = setInterval(async () => {
+      const id = tvIdRef.current;
+      if (!id) return;
+      const { data } = await supabase
+        .from("tvs")
+        .select("is_endomarketing_active,endomarketing_state")
+        .eq("id", id)
+        .maybeSingle();
+      if (stop || !data) return;
+      const prev = tvRef.current;
+      if (!prev) return;
+      const row = data as unknown as Pick<TvRow, "is_endomarketing_active" | "endomarketing_state">;
+      if (
+        prev.is_endomarketing_active === row.is_endomarketing_active &&
+        JSON.stringify(prev.endomarketing_state || null) === JSON.stringify(row.endomarketing_state || null)
+      )
+        return; // nada mudou: não re-renderiza
+      setTv({ ...prev, ...row });
+    }, 2000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [endoActiveFlag]);
+
   // ---------- reload preventivo diário às 03:00 ----------
   useEffect(() => {
     const check = setInterval(() => {
@@ -697,6 +736,9 @@ export function TvPlayer() {
   }, [currentQrUrl]);
 
   const liveOn = !!(tv && tv.is_live_active);
+  // Endomarketing: assume a tela (o ao vivo tem prioridade). Estado inválido = ignora.
+  const endoState = tv?.endomarketing_state || null;
+  const endoOn = !liveOn && !!(tv?.is_endomarketing_active && endoState && extractYoutubeId(endoState.videoId || ""));
   const multizone = tv?.layout_mode === "multizone";
   const portrait = tv?.orientation === "portrait";
   const volume = typeof tv?.volume === "number" ? tv.volume : 100;
@@ -733,7 +775,7 @@ export function TvPlayer() {
 
   // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
   useEffect(() => {
-    if (!current || liveOn) return;
+    if (!current || liveOn || endoOn) return; // playlist pausada no ao vivo/Endomarketing
     let cancelled = false;
     const key = current.media_id + "-" + index;
 
@@ -771,12 +813,12 @@ export function TvPlayer() {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.media_id, index, liveOn]);
+  }, [current?.media_id, index, liveOn, endoOn]);
 
   // ---------- temporizador: imagens por duração; vídeos com watchdog de segurança ----------
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (liveOn || !current || spotlightOn || welcomeOn || alertMsg) return;
+    if (liveOn || endoOn || !current || spotlightOn || welcomeOn || alertMsg) return;
 
     if (current.type === "video" || current.type === "youtube") {
       // fallback genérico até os metadados/onEnded chegarem
@@ -792,7 +834,7 @@ export function TvPlayer() {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, current, liveOn, spotlightOn, welcomeOn, alertMsg, advance]);
+  }, [index, current, liveOn, endoOn, spotlightOn, welcomeOn, alertMsg, advance]);
 
   // watchdog dinâmico: duração real do vídeo + 5s
   const handleVideoMetadata = useCallback(
@@ -864,6 +906,45 @@ export function TvPlayer() {
   );
 
 
+  const tickerVisible = multizone && tickerPosition !== "hidden";
+  // rodapé (texto simples ou NEWS): usado na tela normal e no Endomarketing sem tela cheia
+  const tickerBar = tickerVisible ? (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: tickerPosition === "top" ? 0 : undefined,
+        bottom: tickerPosition === "top" ? undefined : 0,
+        height: tickerH + "px",
+        boxSizing: "border-box",
+        backgroundColor: "#0A3981",
+        ...(newsMode
+          ? {
+              background: "linear-gradient(180deg,#ffffff,#d9dfe8)",
+              boxShadow: "0 0 30px rgba(0,0,0,0.5)",
+            }
+          : { display: "flex", alignItems: "center" }),
+        color: "#FFFFFF",
+        overflow: "hidden",
+      }}
+    >
+      {newsMode ? (
+        <NewsMarquee
+          items={
+            newsItems.length
+              ? newsItems
+              : [{ text: tv?.ticker_text || BRAND.slogan, source: "", promo: true }]
+          }
+        />
+      ) : (
+        <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
+          {tv?.ticker_text || BRAND.slogan}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   // ---------- render ----------
   if (status === "boot" || status === "connecting") {
     return (
@@ -927,6 +1008,33 @@ export function TvPlayer() {
             </p>
           ) : null}
         </div>
+      </Stage>
+    );
+  }
+
+  // ---------- Endomarketing: vídeo do YouTube controlado ao vivo pelo painel ----------
+  // Sem tela cheia: ocupa a área da mídia e mantém o rodapé (barra institucional).
+  // Tela cheia: cobre tudo. Avisos continuam aparecendo por cima. O EndoPlayer fica sempre
+  // na mesma posição da árvore, então alternar a tela cheia não reinicia o vídeo.
+  if (endoOn && endoState) {
+    const full = !!endoState.fullscreen;
+    const box: React.CSSProperties =
+      !full && tickerVisible
+        ? {
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: tickerPosition === "top" ? tickerH + "px" : 0,
+            bottom: tickerPosition === "top" ? 0 : tickerH + "px",
+          }
+        : { position: "absolute", inset: 0 };
+    return (
+      <Stage portrait={portrait}>
+        <div style={box}>
+          <EndoPlayer state={endoState} />
+        </div>
+        {!full ? tickerBar : null}
+        {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
       </Stage>
     );
   }
@@ -1057,7 +1165,6 @@ export function TvPlayer() {
     );
   }
 
-  const tickerVisible = multizone && tickerPosition !== "hidden";
   const mediaBox: React.CSSProperties = {
     backgroundColor: "#000000",
     width: "100%",
@@ -1179,42 +1286,7 @@ export function TvPlayer() {
             ) : null}
           </div>
 
-          {tickerVisible ? (
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: tickerPosition === "top" ? 0 : undefined,
-                bottom: tickerPosition === "top" ? undefined : 0,
-                height: tickerH + "px",
-                boxSizing: "border-box",
-                backgroundColor: "#0A3981",
-                ...(newsMode
-                  ? {
-                      background: "linear-gradient(180deg,#ffffff,#d9dfe8)",
-                      boxShadow: "0 0 30px rgba(0,0,0,0.5)",
-                    }
-                  : { display: "flex", alignItems: "center" }),
-                color: "#FFFFFF",
-                overflow: "hidden",
-              }}
-            >
-              {newsMode ? (
-                <NewsMarquee
-                  items={
-                    newsItems.length
-                      ? newsItems
-                      : [{ text: tv?.ticker_text || BRAND.slogan, source: "", promo: true }]
-                  }
-                />
-              ) : (
-                <div className="cf-ticker" style={{ fontSize: "40px", fontWeight: 800 }}>
-                  {tv?.ticker_text || BRAND.slogan}
-                </div>
-              )}
-            </div>
-          ) : null}
+          {tickerBar}
         </>
       ) : null}
 

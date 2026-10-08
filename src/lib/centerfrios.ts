@@ -93,6 +93,45 @@ export type TvRow = {
   news_queries: string | null;
   news_exclude: string | null;
   news_interval_min: number;
+  // Endomarketing (migration 20261008150000); ausentes enquanto a migration não for aplicada
+  is_endomarketing_active?: boolean;
+  endomarketing_state?: EndoState | null;
+};
+
+/** Estado do modo Endomarketing gravado em tvs.endomarketing_state (o painel escreve, a TV obedece).
+ *  `nonce` muda a cada comando pontual (trocar vídeo / voltar ao início): a TV aplica só uma vez.
+ *  playing/volume/isMuted/loop/fullscreen são "estado contínuo": a TV sempre converge para eles. */
+export type EndoState = {
+  videoId: string;
+  title: string;
+  playing: boolean;
+  currentTime: number; // posição desejada ao aplicar um nonce novo (0 = voltar ao início)
+  volume: number; // 0-100
+  isMuted: boolean;
+  loop: boolean;
+  fullscreen: boolean; // true = cobre rodapé/cantos; false = mantém a barra institucional
+  momentTitle?: string;
+  nonce: string;
+};
+
+export type EndoMoment = {
+  id: string;
+  title: string;
+  description: string | null;
+  youtube_url: string;
+  suggested_volume: number;
+  loop: boolean;
+  order_index: number;
+  created_at: string;
+};
+
+export type EndoQueueItem = {
+  id: string;
+  youtube_url: string;
+  video_id: string;
+  title: string | null;
+  order_index: number;
+  created_at: string;
 };
 
 export type EventCheckin = {
@@ -155,6 +194,9 @@ export const TV_NEWS_COLUMNS =
   "show_logo,logo_size,show_news_ticker,news_queries,news_exclude,news_interval_min";
 export const TV_SELECT_COLUMNS_LEGACY = TV_SELECT_COLUMNS;
 export const TV_SELECT_COLUMNS_FULL = TV_SELECT_COLUMNS + "," + TV_NEWS_COLUMNS;
+// Colunas do Endomarketing (migration 20261008150000): mesmo esquema de reserva.
+export const TV_ENDO_COLUMNS = "is_endomarketing_active,endomarketing_state";
+export const TV_SELECT_COLUMNS_ENDO = TV_SELECT_COLUMNS_FULL + "," + TV_ENDO_COLUMNS;
 
 export type NewsTickerItem = { text: string; source: string; promo?: boolean };
 
@@ -219,7 +261,9 @@ const YOUTUBE_ID_RE =
 
 export function extractYoutubeId(url: string): string | null {
   if (!url) return null;
-  const m = url.match(YOUTUBE_ID_RE);
+  const raw = url.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw; // ID puro (igual ao ytId do player-engine.js)
+  const m = raw.match(YOUTUBE_ID_RE);
   return m ? m[1] : null;
 }
 

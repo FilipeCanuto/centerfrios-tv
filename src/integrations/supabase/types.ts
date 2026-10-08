@@ -59,6 +59,66 @@ export type Database = {
         }
         Relationships: []
       }
+      endomarketing_moments: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          loop: boolean
+          order_index: number
+          suggested_volume: number
+          title: string
+          youtube_url: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          loop?: boolean
+          order_index?: number
+          suggested_volume?: number
+          title: string
+          youtube_url: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          loop?: boolean
+          order_index?: number
+          suggested_volume?: number
+          title?: string
+          youtube_url?: string
+        }
+        Relationships: []
+      }
+      endomarketing_queue: {
+        Row: {
+          created_at: string
+          id: string
+          order_index: number
+          title: string | null
+          video_id: string
+          youtube_url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_index?: number
+          title?: string | null
+          video_id: string
+          youtube_url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_index?: number
+          title?: string | null
+          video_id?: string
+          youtube_url?: string
+        }
+        Relationships: []
+      }
       event_checkins: {
         Row: {
           company: string
@@ -254,11 +314,13 @@ export type Database = {
       tvs: {
         Row: {
           command: Json | null
+          endomarketing_state: Json | null
           countdown_ends_at: string | null
           countdown_label: string | null
           created_at: string
           device_uuid: string | null
           event_mode: boolean
+          is_endomarketing_active: boolean
           id: string
           is_live_active: boolean
           is_paired: boolean
@@ -295,11 +357,13 @@ export type Database = {
         }
         Insert: {
           command?: Json | null
+          endomarketing_state?: Json | null
           countdown_ends_at?: string | null
           countdown_label?: string | null
           created_at?: string
           device_uuid?: string | null
           event_mode?: boolean
+          is_endomarketing_active?: boolean
           id?: string
           is_live_active?: boolean
           is_paired?: boolean
@@ -336,11 +400,13 @@ export type Database = {
         }
         Update: {
           command?: Json | null
+          endomarketing_state?: Json | null
           countdown_ends_at?: string | null
           countdown_label?: string | null
           created_at?: string
           device_uuid?: string | null
           event_mode?: boolean
+          is_endomarketing_active?: boolean
           id?: string
           is_live_active?: boolean
           is_paired?: boolean

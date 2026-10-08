@@ -42,12 +42,12 @@ export function maceioHHMM(): string {
 }
 
 /** Busca /api/public/infobar e acerta o relógio. Devolve o JSON (ou null). */
-export async function fetchInfobarAndSync(): Promise<any> {
+export async function fetchInfobarAndSync(): Promise<unknown> {
   const t0 = Date.now();
   try {
     const res = await fetch("/api/public/infobar?t=" + t0, { cache: "no-store" });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = (await res.json()) as { serverTime?: unknown } | null;
     syncTvClock(data?.serverTime, t0, Date.now());
     return data;
   } catch {
