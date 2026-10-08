@@ -31,7 +31,6 @@ export function EndomarketingManager() {
     const { data } = await supabase
       .from("tvs")
       .select("*")
-      .eq("is_paired", true)
       .order("created_at", { ascending: true });
     const list = (data || []) as unknown as TvRow[];
     setTvs(list);
