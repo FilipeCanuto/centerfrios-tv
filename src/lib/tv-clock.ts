@@ -5,9 +5,17 @@
 const CF_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
 let offset = 0;
 let synced = false;
+// Âncora monotônica (performance.now não muda quando o aparelho acerta/erra o próprio relógio).
+let anchor: { server: number; mono: number } | null = null;
+let lastRtt = 1e9;
+const mono = (): number =>
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
 
 /** Agora em UTC "de verdade" (ms). Use no lugar de Date.now() ao comparar com horários do servidor. */
 export function tvNow(): number {
+  if (anchor) return anchor.server + (mono() - anchor.mono);
   return Date.now() + offset;
 }
 
@@ -15,10 +23,17 @@ export function isTvClockSynced(): boolean {
   return synced;
 }
 
-/** Registra o horário do servidor medido numa requisição que começou em t0 e terminou em t1 (ms locais). */
-export function syncTvClock(serverTime: unknown, t0: number, t1: number): void {
-  if (typeof serverTime !== "number" || !(serverTime > 0) || t1 - t0 > 10000) return;
-  offset = serverTime + (t1 - t0) / 2 - t1;
+/** Registra o horário do servidor medido numa requisição (m0/m1 = mono() no início/fim; t1 = Date.now() no fim). */
+export function syncTvClock(serverTime: unknown, m0: number, m1: number, t1: number): void {
+  if (typeof serverTime !== "number" || !(serverTime > 0)) return;
+  const rtt = m1 - m0;
+  if (!(rtt >= 0) || rtt > 30000) return;
+  // medida bem pior que a atual só substitui se a atual tiver mais de 1 h
+  if (anchor && rtt > lastRtt * 2 + 500 && mono() - anchor.mono < 3600000) return;
+  const mid = serverTime + rtt / 2;
+  anchor = { server: mid, mono: m1 };
+  offset = mid - t1;
+  lastRtt = rtt;
   synced = true;
 }
 
@@ -43,12 +58,12 @@ export function maceioHHMM(): string {
 
 /** Busca /api/public/infobar e acerta o relógio. Devolve o JSON (ou null). */
 export async function fetchInfobarAndSync(): Promise<unknown> {
-  const t0 = Date.now();
+  const m0 = mono();
   try {
-    const res = await fetch("/api/public/infobar?t=" + t0, { cache: "no-store" });
+    const res = await fetch("/api/public/infobar?t=" + Date.now(), { cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as { serverTime?: unknown } | null;
-    syncTvClock(data?.serverTime, t0, Date.now());
+    syncTvClock(data?.serverTime, m0, mono(), Date.now());
     return data;
   } catch {
     return null;

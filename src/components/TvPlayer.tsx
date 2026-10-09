@@ -157,11 +157,19 @@ export function TvPlayer() {
     const t = setInterval(() => setNow(tvNow()), 1000); // hora certa (servidor), não a do aparelho
     return () => clearInterval(t);
   }, []);
-  // acerta o relógio pelo servidor no início e a cada 30 min (mesmo com clima/cotação desligados)
+  // acerta o relógio pelo servidor no início e a cada 10 min (mesmo com clima/cotação desligados);
+  // enquanto não conseguir a 1ª sincronização (rede lenta no boot), tenta a cada 30 s
   useEffect(() => {
     fetchInfobarAndSync();
-    const t = setInterval(fetchInfobarAndSync, 30 * 60 * 1000);
-    return () => clearInterval(t);
+    const t = setInterval(fetchInfobarAndSync, 10 * 60 * 1000);
+    const retry = setInterval(() => {
+      if (isTvClockSynced()) clearInterval(retry);
+      else fetchInfobarAndSync();
+    }, 30000);
+    return () => {
+      clearInterval(t);
+      clearInterval(retry);
+    };
   }, []);
 
   // ---------- registro / pareamento (código sempre vem do servidor) ----------

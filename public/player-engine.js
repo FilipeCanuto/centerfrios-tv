@@ -127,14 +127,31 @@
      medido em /api/public/infobar (serverTime). nowMs() = agora em UTC "de verdade".
      cfNow() = Date cujos campos UTC são a hora de Maceió (UTC-3, sem horário de verão):
      SEMPRE ler com getUTCHours/getUTCMinutes/getUTCDay/getUTCDate/getUTCMonth/getUTCFullYear. */
-  var clockOffset = 0, clockSynced = false;
+  /* Âncora monotônica: depois de sincronizar, a hora = hora do servidor + tempo decorrido medido
+     por performance.now() (cronômetro que NÃO muda quando o Android acerta/erra o relógio do
+     aparelho). Assim um ajuste automático do relógio do Fire TV depois da sincronização não
+     estraga a hora. Sem performance.now (navegador muito antigo): usa o desvio do Date. */
+  var clockOffset = 0, clockSynced = false, clockAnchor = null, clockRtt = 1e9;
   var CF_UTC_OFFSET_MS = -3 * 60 * 60 * 1000;
-  function nowMs() { return new Date().getTime() + clockOffset; }
+  var perf = window.performance && typeof window.performance.now === "function" ? window.performance : null;
+  function mono() { return perf ? perf.now() : new Date().getTime(); }
+  function nowMs() {
+    if (clockAnchor) return clockAnchor.server + (mono() - clockAnchor.mono);
+    return new Date().getTime() + clockOffset;
+  }
   function cfNow() { return new Date(nowMs() + CF_UTC_OFFSET_MS); }
   function cfYmd(d) { return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate()); }
-  function syncClock(serverTime, t0, t1) {
-    if (typeof serverTime !== "number" || !(serverTime > 0) || t1 - t0 > 10000) return; /* resposta lenta: ignora */
-    clockOffset = serverTime + (t1 - t0) / 2 - t1;   /* meio do caminho da requisição */
+  /* t0/t1: Date local de início/fim da requisição; m0/m1: mono() de início/fim */
+  function syncClock(serverTime, t0, t1, m0, m1) {
+    if (typeof serverTime !== "number" || !(serverTime > 0)) return;
+    var rtt = (m1 !== undefined ? m1 - m0 : t1 - t0);
+    if (!(rtt >= 0) || rtt > 30000) return;            /* resposta absurda: ignora */
+    /* uma medida pior (mais lenta) só substitui a atual se a atual tiver mais de 1 h */
+    if (clockAnchor && rtt > clockRtt * 2 + 500 && mono() - clockAnchor.mono < 3600000) return;
+    var mid = serverTime + rtt / 2;
+    if (m1 !== undefined) clockAnchor = { server: mid, mono: m1 };
+    clockOffset = mid - t1;
+    clockRtt = rtt;
     clockSynced = true;
   }
 
@@ -287,10 +304,15 @@
     setInterval(dailyReload, 60000);
     setInterval(flushPlays, PLAY_FLUSH_MS);
     setInterval(checkVersion, VERSION_MS);
-    /* hora certa: acerta já no início e a cada 30 min, mesmo com clima/cotação desligados
+    /* hora certa: acerta já no início e a cada 10 min, mesmo com clima/cotação desligados
        (a rota tem cache no servidor; a resposta do clima/cotação é reaproveitada) */
     try { fetchInfobar(function () { updateNewsClock(); }); } catch (e) {}
-    setInterval(function () { fetchInfobar(function () {}); }, 30 * 60 * 1000);
+    setInterval(function () { fetchInfobar(function () {}); }, 10 * 60 * 1000);
+    /* sem sincronização ainda (rede lenta no boot): tenta de novo a cada 30 s até conseguir */
+    var clockRetry = setInterval(function () {
+      if (clockSynced) { clearInterval(clockRetry); return; }
+      infobarAt = 0; fetchInfobar(function () { updateNewsClock(); });
+    }, 30000);
   }
 
   /* ---------------- heartbeat: fire-and-forget, jamais relido ---------------- */
@@ -624,9 +646,10 @@
       for (var i = 0; i < w.length; i++) { try { w[i](data); } catch (e) {} }
     }
     setTimeout(function () { finish(null); }, 20000);  /* servidor não respondeu: usa a reserva */
+    var m0 = mono();
     httpGetJson("/api/public/infobar?t=" + now, function (err, data) {
       var t1 = new Date().getTime();
-      if (!err && data) syncClock(data.serverTime, now, t1);     /* acerta o relógio da TV */
+      if (!err && data) syncClock(data.serverTime, now, t1, m0, mono());     /* acerta o relógio da TV */
       if (!err && data && (data.weather || data.rates)) { infobarData = data; infobarAt = t1; }
       else data = null;
       finish(data);
@@ -988,6 +1011,7 @@
   var endoYt = { player: null, ready: false, videoId: "" };
   var endoApplied = { nonce: "", volume: -1, muted: null, fullscreen: null };
   var endoState = null, endoEnded = false;
+  var endoAudioBlocked = false, endoUnmuteAt = 0, endoStuck = 0, endoWantKey = "";
 
   function endoValid(st) { return !!(st && typeof st === "object" && ytId(st.videoId || "")); }
 
@@ -1050,7 +1074,9 @@
         endoYt.player = new window.YT.Player("endo-holder", {
           videoId: videoId, width: "100%", height: "100%",
           playerVars: {
-            autoplay: endoState && endoState.playing ? 1 : 0, controls: 0, modestbranding: 1, rel: 0,
+            /* nasce SEMPRE mudo: autoplay sem som é permitido em qualquer navegador (Silk incluso).
+               O som é ligado em endoSync depois que o vídeo já está tocando. */
+            autoplay: endoState && endoState.playing ? 1 : 0, mute: 1, controls: 0, modestbranding: 1, rel: 0,
             playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3,
             origin: window.location.protocol + "//" + window.location.host,
             widget_referrer: window.location.href
@@ -1058,14 +1084,20 @@
           events: {
             onReady: function () {
               endoYt.ready = true;
-              endoApplied.volume = -1; endoApplied.muted = null;   /* reaplica áudio no player novo */
+              endoApplied.volume = -1;
+              try { endoYt.player.mute(); } catch (e) {}
+              endoApplied.muted = true;            /* começa mudo; endoSync liga o som quando estiver tocando */
+              endoStuck = 0;
               endoSync();
             },
             onStateChange: function (e) {
               var S = window.YT && window.YT.PlayerState;
               if (!S || !endoActive) return;
               if (e.data === S.ENDED) endoOnEnded();
-              else if (e.data === S.PLAYING) { endoEnded = false; showEl(endoEndEl, false); }
+              else if (e.data === S.PLAYING) { endoEnded = false; showEl(endoEndEl, false); endoSync(); /* liga o som já */ }
+              else if (e.data === S.PAUSED && endoState && endoState.playing && !endoEnded) {
+                setTimeout(endoSync, 300);   /* pausou sem ninguém pedir (ex.: Silk barrou o som): recupera já */
+              }
             },
             onError: function () { diag("endo: video indisponivel"); endoEnded = true; showEl(endoEndEl, true); }
           }
@@ -1073,6 +1105,21 @@
       } catch (e) { endoYt.player = null; }
     });
   }
+
+  /* Qualquer tecla do controle remoto é um "gesto do usuário": libera o som bloqueado na hora. */
+  function endoKeyUnlock() {
+    if (!endoActive || !endoYt.player || !endoYt.ready || !endoState) return;
+    endoAudioBlocked = false;
+    if (endoState.isMuted) return;
+    try {
+      endoYt.player.unMute();
+      endoYt.player.setVolume(endoApplied.volume >= 0 ? endoApplied.volume : 80);
+      if (endoState.playing) endoYt.player.playVideo();
+    } catch (e) {}
+    endoApplied.muted = false; endoUnmuteAt = new Date().getTime();
+    diag("");
+  }
+  try { document.addEventListener("keydown", endoKeyUnlock, false); } catch (e) {}
 
   function endoOnEnded() {
     if (endoState && endoState.loop) {
@@ -1129,17 +1176,45 @@
     var vol = Math.max(0, Math.min(100, Math.round(Number(st.volume))));
     if (isNaN(vol)) vol = 80;
     if (endoApplied.volume !== vol) { endoApplied.volume = vol; try { p.setVolume(vol); } catch (e) {} }
-    var muted = !!st.isMuted;
-    if (endoApplied.muted !== muted) { endoApplied.muted = muted; try { if (muted) p.mute(); else p.unMute(); } catch (e) {} }
+    var wantSound = !st.isMuted && vol > 0;
+    /* novo comando do painel ou mudar mudo/som = tenta o som de novo (mexer só no volume não:
+       com o som bloqueado, cada tentativa daria uma travadinha) */
+    var wantKey = (st.isMuted ? "m" : "s") + "|" + endoApplied.nonce;
+    if (wantKey !== endoWantKey) { endoWantKey = wantKey; endoAudioBlocked = false; }
 
-    /* play/pause (não reinicia sozinho um vídeo que terminou sem loop) */
-    var s = -9;
+    var s = -9, now = new Date().getTime();
     try { s = p.getPlayerState(); } catch (e) {}
     if (!S) return;
-    if (st.playing) {
-      if (!endoEnded && s !== S.PLAYING && s !== S.BUFFERING) { try { p.playVideo(); } catch (e) {} }
-    } else if (s === S.PLAYING || s === S.BUFFERING) {
-      try { p.pauseVideo(); } catch (e) {}
+    if (st.playing && !endoEnded) {
+      if (s === S.PLAYING) {
+        endoStuck = 0;
+        /* já está tocando: agora é seguro ligar o som */
+        if (wantSound && !endoAudioBlocked && endoApplied.muted !== false) {
+          try { p.unMute(); p.setVolume(vol); } catch (e) {}
+          endoApplied.muted = false; endoUnmuteAt = now;
+        } else if (!wantSound && endoApplied.muted !== true) {
+          try { p.mute(); } catch (e) {}
+          endoApplied.muted = true;
+        }
+      } else if (s !== S.BUFFERING) {
+        /* devia estar tocando e não está */
+        if (endoApplied.muted === false && now - endoUnmuteAt < 8000) {
+          /* parou logo depois de ligar o som: o navegador (Silk) bloqueou o som sem toque no controle.
+             Continua tocando MUDO em vez de ficar pausado; tenta o som de novo no próximo comando
+             do painel ou quando alguém apertar qualquer botão do controle remoto. */
+          endoAudioBlocked = true;
+          diag("endo: som bloqueado pelo navegador - aperte OK no controle");
+        }
+        endoStuck++;
+        if (endoAudioBlocked || endoStuck >= 2) {      /* ~4 s parado: garante o mudo, que sempre toca */
+          try { p.mute(); } catch (e) {}
+          endoApplied.muted = true;
+        }
+        try { p.playVideo(); } catch (e) {}
+      }
+    } else if (!st.playing) {
+      endoStuck = 0;
+      if (s === S.PLAYING || s === S.BUFFERING) { try { p.pauseVideo(); } catch (e) {} }
     }
     /* ENDED que o evento não avisou (Silk): leitura direta. Logo após um comando o estado
        ainda pode ser o antigo (ENDED): não conclui "terminou" nessa mesma leitura. */

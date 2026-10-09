@@ -47,6 +47,7 @@ export function EndoPlayer({ state }: { state: EndoState }) {
   const stateRef = useRef(state);
   const applied = useRef({ nonce: "", volume: -1, muted: null as boolean | null });
   const endedRef = useRef(false);
+  const audio = useRef({ blocked: false, unmuteAt: 0, stuck: 0, wantKey: "" });
   const [ended, setEnded] = useState(false);
   const [title, setTitle] = useState<string>("");
   const videoId = extractYoutubeId(state.videoId) || state.videoId;
@@ -86,15 +87,14 @@ export function EndoPlayer({ state }: { state: EndoState }) {
         /* ignore */
       }
     }
-    const muted = !!st.isMuted;
-    if (applied.current.muted !== muted) {
-      applied.current.muted = muted;
-      try {
-        if (muted) p.mute();
-        else p.unMute();
-      } catch {
-        /* ignore */
-      }
+    // Som: o player nasce MUDO (autoplay sem som é sempre permitido). Só liga o som com o vídeo já
+    // tocando. Se o navegador (Silk/Smart TV) barrar o som e pausar, volta para o mudo e continua
+    // tocando; tenta o som de novo no próximo comando do painel ou ao apertar o controle remoto.
+    const wantSound = !st.isMuted && vol > 0;
+    const wantKey = (st.isMuted ? "m" : "s") + "|" + applied.current.nonce;
+    if (wantKey !== audio.current.wantKey) {
+      audio.current.wantKey = wantKey;
+      audio.current.blocked = false;
     }
     let s = -9;
     try {
@@ -102,20 +102,36 @@ export function EndoPlayer({ state }: { state: EndoState }) {
     } catch {
       /* ignore */
     }
-    if (st.playing) {
-      if (!endedRef.current && s !== YT.PlayerState.PLAYING && s !== YT.PlayerState.BUFFERING) {
-        try {
+    const now = Date.now();
+    try {
+      if (st.playing && !endedRef.current) {
+        if (s === YT.PlayerState.PLAYING) {
+          audio.current.stuck = 0;
+          if (wantSound && !audio.current.blocked && applied.current.muted !== false) {
+            p.unMute();
+            p.setVolume(vol);
+            applied.current.muted = false;
+            audio.current.unmuteAt = now;
+          } else if (!wantSound && applied.current.muted !== true) {
+            p.mute();
+            applied.current.muted = true;
+          }
+        } else if (s !== YT.PlayerState.BUFFERING) {
+          if (applied.current.muted === false && now - audio.current.unmuteAt < 8000)
+            audio.current.blocked = true;
+          audio.current.stuck++;
+          if (audio.current.blocked || audio.current.stuck >= 2) {
+            p.mute();
+            applied.current.muted = true;
+          }
           p.playVideo();
-        } catch {
-          /* ignore */
         }
+      } else if (!st.playing) {
+        audio.current.stuck = 0;
+        if (s === YT.PlayerState.PLAYING || s === YT.PlayerState.BUFFERING) p.pauseVideo();
       }
-    } else if (s === YT.PlayerState.PLAYING || s === YT.PlayerState.BUFFERING) {
-      try {
-        p.pauseVideo();
-      } catch {
-        /* ignore */
-      }
+    } catch {
+      /* ignore */
     }
     if (s === YT.PlayerState.ENDED && !endedRef.current && !fromNonce) onEnded();
   }
@@ -138,6 +154,7 @@ export function EndoPlayer({ state }: { state: EndoState }) {
         height: "100%",
         playerVars: {
           autoplay: stateRef.current.playing ? 1 : 0,
+          mute: 1, // nasce mudo: autoplay sem som é sempre permitido
           controls: 0,
           modestbranding: 1,
           rel: 0,
@@ -151,11 +168,27 @@ export function EndoPlayer({ state }: { state: EndoState }) {
         events: {
           onReady: () => {
             readyRef.current = true;
+            try {
+              playerRef.current?.mute();
+            } catch {
+              /* ignore */
+            }
+            applied.current.muted = true;
+            audio.current.stuck = 0;
             sync(true);
           },
           onStateChange: (e: { data: number }) => {
             if (e.data === YT.PlayerState.ENDED) onEnded();
-            else if (e.data === YT.PlayerState.PLAYING) markEnded(false);
+            else if (e.data === YT.PlayerState.PLAYING) {
+              markEnded(false);
+              sync(false); // liga o som já
+            } else if (
+              e.data === YT.PlayerState.PAUSED &&
+              stateRef.current.playing &&
+              !endedRef.current
+            ) {
+              setTimeout(() => sync(false), 300); // pausou sozinho (som barrado): recupera
+            }
           },
           onError: () => markEnded(true),
         },
@@ -201,6 +234,27 @@ export function EndoPlayer({ state }: { state: EndoState }) {
     const t = setInterval(() => sync(false), 2000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // qualquer tecla do controle remoto = gesto do usuário: libera o som bloqueado
+  useEffect(() => {
+    function onKey() {
+      const p = playerRef.current;
+      const st = stateRef.current;
+      audio.current.blocked = false;
+      if (!p || !readyRef.current || st.isMuted) return;
+      try {
+        p.unMute();
+        p.setVolume(Math.max(0, Math.min(100, Math.round(Number(st.volume)))) || 0);
+        if (st.playing) p.playVideo();
+        applied.current.muted = false;
+        audio.current.unmuteAt = Date.now();
+      } catch {
+        /* ignore */
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
   // título do momento por 8 s
