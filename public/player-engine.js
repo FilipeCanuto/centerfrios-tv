@@ -26,6 +26,15 @@
   /* Colunas do Endomarketing (migration 20261008150000): mesma estratégia de reserva. */
   var TV_COLS_ENDO = ",is_endomarketing_active,endomarketing_state";
   var useEndoCols = true, endoColsRetryAt = 0;
+  /* Vinhetas (migration 20261011120000). Grupos opcionais de colunas, do mais antigo ao mais novo:
+     se o banco ainda não tem alguma coluna, desliga o grupo MAIS NOVO ligado, re-tenta na hora
+     e volta a pedir o grupo em 10 min. Assim publicar antes da migration nunca quebra o resto. */
+  var TV_COLS_VIG = ",vignettes_enabled";
+  var colGroups = [
+    { cols: TV_COLS_NEWS, on: true, retryAt: 0 },
+    { cols: TV_COLS_ENDO, on: true, retryAt: 0 },
+    { cols: TV_COLS_VIG, on: true, retryAt: 0 }
+  ];
   var NEWS_PROMO_EVERY = 4;
 
   /* A estação do aeroporto (METAR) mede de hora em hora e a PTAX de fechamento sai 1x/dia:
@@ -304,6 +313,11 @@
     setInterval(dailyReload, 60000);
     setInterval(flushPlays, PLAY_FLUSH_MS);
     setInterval(checkVersion, VERSION_MS);
+    /* reconfere a playlist (e as vinhetas) a cada 5 min: mudanças feitas no painel chegam sozinhas.
+       Sem mudança = nada acontece; com mudança = troca ao fim da mídia atual. */
+    setInterval(function () {
+      if (tv && !isLive && !endoActive && (tv.playlist_id || tv.event_mode)) loadPlaylist(tv.playlist_id, tv.event_mode);
+    }, 5 * 60 * 1000);
     /* hora certa: acerta já no início e a cada 10 min, mesmo com clima/cotação desligados
        (a rota tem cache no servidor; a resposta do clima/cotação é reaproveitada) */
     try { fetchInfobar(function () { updateNewsClock(); }); } catch (e) {}
@@ -383,24 +397,21 @@
 
   function pollTv() {
     if (!tvId) return;
-    var t = new Date().getTime();
-    if (!useNewsCols && newsColsRetryAt && t > newsColsRetryAt) { useNewsCols = true; newsColsRetryAt = 0; }
-    if (!useEndoCols && endoColsRetryAt && t > endoColsRetryAt) { useEndoCols = true; endoColsRetryAt = 0; }
-    var wantNews = useNewsCols, wantEndo = useNewsCols && useEndoCols;
-    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS + (wantNews ? TV_COLS_NEWS : "") +
-      (wantEndo ? TV_COLS_ENDO : ""), null, function (err, rows) {
-      if (err && wantEndo && colsMissing(rows)) {
-        /* colunas do Endomarketing ainda não existem: segue sem elas e re-tenta em 10 min */
-        useEndoCols = false; endoColsRetryAt = new Date().getTime() + 10 * 60 * 1000;
+    var t = new Date().getTime(), sel = TV_COLS, g, i;
+    for (i = 0; i < colGroups.length; i++) {
+      g = colGroups[i];
+      if (!g.on && g.retryAt && t > g.retryAt) { g.on = true; g.retryAt = 0; }
+      /* um grupo só entra se todos os anteriores estiverem ligados (dependem de migrations anteriores) */
+      if (g.on && (i === 0 || colGroups[i - 1].on)) sel += g.cols;
+    }
+    useNewsCols = colGroups[0].on;
+    useEndoCols = colGroups[0].on && colGroups[1].on;
+    req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + sel, null, function (err, rows) {
+      if (err && sel !== TV_COLS && colsMissing(rows)) {
+        for (var k = colGroups.length - 1; k >= 0; k--) {
+          if (colGroups[k].on) { colGroups[k].on = false; colGroups[k].retryAt = new Date().getTime() + 10 * 60 * 1000; break; }
+        }
         pollTv();
-        return;
-      }
-      if (err && wantNews) {
-        req("GET", "/rest/v1/tvs?id=eq." + tvId + "&select=" + TV_COLS, null, function (err2, rows2) {
-          if (err2 || !rows2 || !rows2.length) { diag("sem conexao"); return; }
-          useNewsCols = false; newsColsRetryAt = new Date().getTime() + 10 * 60 * 1000;
-          handleTvRows(rows2);
-        });
         return;
       }
       if (err || !rows || !rows.length) { diag("sem conexao"); return; }
@@ -433,7 +444,9 @@
       endoApplyRow(row);
 
       var structural = !prev || prev.playlist_id !== row.playlist_id ||
-        prev.event_mode !== row.event_mode || prev.is_paired !== row.is_paired;
+        prev.event_mode !== row.event_mode || prev.is_paired !== row.is_paired ||
+        !!prev.vignettes_enabled !== !!row.vignettes_enabled ||
+        (!!row.vignettes_enabled && prev.orientation !== row.orientation);
 
       if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         stopPlayback();
@@ -1329,7 +1342,7 @@
      apos 3 falhas seguidas pausa por 1 h. Nunca interfere na reproducao. */
   var playCounts = {}, playFails = 0, playPauseUntil = 0, PLAY_FLUSH_MS = 5 * 60 * 1000;
   function countPlay(mediaId) {
-    if (!mediaId || String(mediaId).length < 30) return; /* so uuid (fotos do mural nao entram) */
+    if (!mediaId || String(mediaId).length < 30 || String(mediaId).indexOf("vig-") === 0) return; /* so uuid de midia (mural e vinhetas nao entram) */
     var n = 0, k;
     for (k in playCounts) if (playCounts.hasOwnProperty(k)) n++;
     if (n >= 200 && !playCounts[mediaId]) return;
@@ -1364,13 +1377,49 @@
   }
 
   /* ---------------- playlist (RPC + fallback direto) ---------------- */
+  /* ---------------- vinhetas intercaladas ----------------
+     Com tvs.vignettes_enabled ligado, a TV busca a lista de vinhetas da SUA orientação
+     (vertical = TV em pé / horizontal) e monta: vinheta 1, item 1, vinheta 2, item 2, ...
+     Se houver menos vinhetas que itens, elas recomeçam (v1, v2, v1, v2...). A vinheta herda a
+     agenda do item seguinte: item fora do horário = o par (vinheta + item) é pulado junto.
+     Qualquer falha (tabela ainda não existe, sem rede, lista vazia) = playlist normal. */
+  function withVignettes(list, done) {
+    if (!tv || !tv.vignettes_enabled || !list.length) { done(); return; }
+    var ori = tv.orientation === "portrait" ? "portrait" : "landscape";
+    req("GET", "/rest/v1/vignettes?select=id,youtube_url,video_id,title&active=is.true&orientation=eq." + ori +
+      "&order=order_index.asc,id.asc", null, function (err, rows) {
+      if (err || !rows || !rows.length) { done(); return; }
+      var vigs = [], i;
+      for (i = 0; i < rows.length; i++) {
+        var vid = rows[i] && ytId(rows[i].video_id || rows[i].youtube_url);
+        if (vid) vigs.push({ id: rows[i].id, vid: vid, title: rows[i].title || "Vinheta" });
+      }
+      if (!vigs.length) { done(); return; }
+      var out = [];
+      for (i = 0; i < list.length; i++) {
+        var v = vigs[i % vigs.length], it = list[i], vg = {
+          media_id: "vig-" + v.id, url: "https://www.youtube.com/watch?v=" + v.vid, type: "youtube",
+          title: v.title, qr_url: null, duration: 10
+        };
+        if (it.sched) vg.sched = it.sched;
+        out.push(vg);
+        out.push(it);
+      }
+      list.length = 0;
+      for (i = 0; i < out.length; i++) list.push(out[i]);
+      done();
+    });
+  }
+
   function loadPlaylist(playlistId, eventMode) {
     var resolved = [];
 
     function finish() {
       attachSched(resolved, playlistId, function () {
-        if (eventMode) { appendEventPhotos(resolved, apply); return; }
-        apply();
+        withVignettes(resolved, function () {
+          if (eventMode) { appendEventPhotos(resolved, apply); return; }
+          apply();
+        });
       });
     }
 
@@ -1398,8 +1447,11 @@
       if (sig === lastSignature) { if (!playing) startLoop(); return; }
       lastSignature = sig;
       items = resolved;
-      idx = 0;
       lsSet(K_PL, JSON.stringify(resolved));
+      /* já tocando (ex.: reconferência a cada 5 min achou mudança): não corta a mídia atual;
+         a próxima a tocar é o 1º item da lista nova */
+      if (playing) { idx = -1; return; }
+      idx = 0;
       startLoop();
     }
 
@@ -1502,6 +1554,7 @@
     clearAllTimers();
     token++;
     var my = token;
+    if (idx < 0) idx = 0;
     var item = items[idx % items.length];
     if (item && (!itemActive(item) || ytIsBad(item))) {
       var pn = pickIndex(idx + 1);

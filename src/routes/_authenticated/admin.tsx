@@ -11,6 +11,7 @@ import { EventsManager } from "@/components/admin/EventsManager";
 import { AlertsManager } from "@/components/admin/AlertsManager";
 import { PresenceManager } from "@/components/admin/PresenceManager";
 import { EndomarketingManager } from "@/components/admin/EndomarketingManager";
+import { VignetteManager } from "@/components/admin/VignetteManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ import {
   Megaphone,
   QrCode,
   HeartHandshake,
+  Clapperboard,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -74,7 +76,17 @@ function Badge({ value }: { value: number }) {
 }
 
 const TAB_KEY = "cf_admin_tab";
-const TAB_IDS = ["tvs", "playlists", "media", "live", "alerts", "presence", "events", "endo"];
+const TAB_IDS = [
+  "tvs",
+  "playlists",
+  "vignettes",
+  "media",
+  "live",
+  "alerts",
+  "presence",
+  "events",
+  "endo",
+];
 function readTab(): string {
   try {
     const t = window.localStorage.getItem(TAB_KEY) || "";
@@ -195,6 +207,9 @@ function AdminPage() {
               <TabsTrigger value="playlists" className={TAB_TRIGGER}>
                 <ListVideo className="h-4 w-4" /> Playlists <Badge value={counts.playlists} />
               </TabsTrigger>
+              <TabsTrigger value="vignettes" className={TAB_TRIGGER}>
+                <Clapperboard className="h-4 w-4" /> Vinhetas
+              </TabsTrigger>
               <TabsTrigger value="media" className={TAB_TRIGGER}>
                 <Images className="h-4 w-4" /> Mídias <Badge value={counts.media} />
               </TabsTrigger>
@@ -220,6 +235,9 @@ function AdminPage() {
             </TabsContent>
             <TabsContent value="playlists" className={PANE} {...keep("playlists")}>
               <PlaylistManager active={tab === "playlists"} />
+            </TabsContent>
+            <TabsContent value="vignettes" className={PANE} {...keep("vignettes")}>
+              <VignetteManager />
             </TabsContent>
             <TabsContent value="media" className={PANE} {...keep("media")}>
               <MediaManager onChanged={refreshCounts} />

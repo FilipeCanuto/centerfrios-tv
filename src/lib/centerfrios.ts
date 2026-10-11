@@ -95,6 +95,8 @@ export type TvRow = {
   news_interval_min: number;
   // Endomarketing (migration 20261008150000); ausentes enquanto a migration não for aplicada
   is_endomarketing_active?: boolean;
+  // Vinhetas intercaladas (migration 20261011120000)
+  vignettes_enabled?: boolean;
   endomarketing_state?: EndoState | null;
 };
 
@@ -197,6 +199,19 @@ export const TV_SELECT_COLUMNS_FULL = TV_SELECT_COLUMNS + "," + TV_NEWS_COLUMNS;
 // Colunas do Endomarketing (migration 20261008150000): mesmo esquema de reserva.
 export const TV_ENDO_COLUMNS = "is_endomarketing_active,endomarketing_state";
 export const TV_SELECT_COLUMNS_ENDO = TV_SELECT_COLUMNS_FULL + "," + TV_ENDO_COLUMNS;
+// Vinhetas (migration 20261011120000): mesmo esquema de reserva.
+export const TV_SELECT_COLUMNS_VIG = TV_SELECT_COLUMNS_ENDO + ",vignettes_enabled";
+
+export type Vignette = {
+  id: string;
+  orientation: "portrait" | "landscape";
+  youtube_url: string;
+  video_id: string;
+  title: string | null;
+  order_index: number;
+  active: boolean;
+  created_at?: string;
+};
 
 export type NewsTickerItem = { text: string; source: string; promo?: boolean };
 

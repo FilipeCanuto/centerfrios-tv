@@ -9,6 +9,8 @@ import {
   DELIVERY_GRACE_MS,
   LOGO_URL,
   TV_SELECT_COLUMNS_ENDO,
+  TV_SELECT_COLUMNS_VIG,
+  extractYoutubeId as ytIdOf,
   TV_SELECT_COLUMNS_FULL,
   TV_SELECT_COLUMNS_LEGACY,
   type NewsTickerItem,
@@ -21,7 +23,6 @@ import {
   type MediaRow,
   type ResolvedItem,
   type TvRow,
-
 } from "@/lib/centerfrios";
 
 import {
@@ -53,7 +54,13 @@ const FADE_MS = 200;
 let useLegacyTvColumns = false;
 // Endomarketing: se as colunas ainda não existem no banco, cai para FULL e re-tenta em 10 min.
 let endoColsRetryAt = 0;
+let vigColsRetryAt = 0;
 async function queryTv(id: string) {
+  if (!useLegacyTvColumns && Date.now() >= endoColsRetryAt && Date.now() >= vigColsRetryAt) {
+    const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_VIG).eq("id", id).maybeSingle();
+    if (!r.error) return r;
+    vigColsRetryAt = Date.now() + 10 * 60 * 1000; // coluna das vinhetas ainda não existe
+  }
   if (!useLegacyTvColumns && Date.now() >= endoColsRetryAt) {
     const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_ENDO).eq("id", id).maybeSingle();
     if (!r.error) return r;
@@ -133,19 +140,15 @@ export function TvPlayer() {
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
 
-
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bootTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const tvRef = useRef<TvRow | null>(null);
   const currentRef = useRef<ResolvedItem | null>(null);
   const itemsRef = useRef<ResolvedItem[]>([]);
-
-
 
   tvRef.current = tv;
   itemsRef.current = items;
@@ -343,6 +346,45 @@ export function TvPlayer() {
         }
       }
 
+      // Vinhetas intercaladas (mesma regra do player-engine.js): v1, item1, v2, item2...
+      // Lista da orientação da TV; menos vinhetas que itens = recomeçam. Falha = playlist normal.
+      const tvNowRow = tvRef.current;
+      if (tvNowRow?.vignettes_enabled && resolved.length) {
+        const ori = tvNowRow.orientation === "portrait" ? "portrait" : "landscape";
+        const { data: vrows, error: verr } = await supabase
+          .from("vignettes")
+          .select("id,youtube_url,video_id,title")
+          .eq("active", true)
+          .eq("orientation", ori)
+          .order("order_index", { ascending: true })
+          .order("id", { ascending: true });
+        const vigs = verr
+          ? []
+          : (
+              (vrows || []) as {
+                id: string;
+                youtube_url: string;
+                video_id: string;
+                title: string | null;
+              }[]
+            )
+              .map((v) => ({ id: v.id, vid: ytIdOf(v.video_id || v.youtube_url), title: v.title }))
+              .filter((v) => !!v.vid);
+        if (vigs.length) {
+          const base = resolved.splice(0, resolved.length);
+          base.forEach((it, i) => {
+            const v = vigs[i % vigs.length];
+            resolved.push({
+              media_id: "vig-" + v.id,
+              url: "https://www.youtube.com/watch?v=" + v.vid,
+              type: "youtube",
+              title: v.title || "Vinheta",
+              duration: 10,
+            });
+            resolved.push(it);
+          });
+        }
+      }
 
       if (eventMode) {
         const { data: photos } = await supabase
@@ -392,7 +434,9 @@ export function TvPlayer() {
       setIndex(0);
       setStatus("playing");
       saveManifest(MANIFEST_KEY, resolved);
-      precacheMedia(resolved.filter((it) => it.type !== "youtube")).then(() => pruneCache(resolved));
+      precacheMedia(resolved.filter((it) => it.type !== "youtube")).then(() =>
+        pruneCache(resolved),
+      );
     } catch (err) {
       console.warn("[CENTERFRIOS] falha ao carregar playlist:", err);
       try {
@@ -411,7 +455,6 @@ export function TvPlayer() {
       setStatus((s) => (s === "boot" || s === "connecting" ? "empty" : s));
     }
   }, []);
-
 
   const refreshTv = useCallback(
     async (id: string | null) => {
@@ -439,6 +482,7 @@ export function TvPlayer() {
 
       setOffline(false);
       setTv(row);
+      tvRef.current = row; // já vale para o loadPlaylist abaixo (vinhetas)
 
       if (!row.is_paired && !row.playlist_id && !row.event_mode) {
         setStatus("pairing");
@@ -494,12 +538,15 @@ export function TvPlayer() {
           const row = payload.new as unknown as TvRow;
           const prev = tvRef.current;
           setTv(row);
+          tvRef.current = row; // já vale para o loadPlaylist abaixo (vinhetas)
           if (!row.is_paired && !row.playlist_id && !row.event_mode) setStatus("pairing");
           else if (
             !prev ||
             row.playlist_id !== prev.playlist_id ||
             row.event_mode !== prev.event_mode ||
-            row.is_paired !== prev.is_paired
+            row.is_paired !== prev.is_paired ||
+            !!row.vignettes_enabled !== !!prev.vignettes_enabled ||
+            (!!row.vignettes_enabled && row.orientation !== prev.orientation)
           ) {
             loadPlaylist(row.playlist_id, row.event_mode);
           }
@@ -510,6 +557,10 @@ export function TvPlayer() {
       .on("postgres_changes", { event: "*", schema: "public", table: "playlists" }, () => {
         const t = tvRef.current;
         if (t) loadPlaylist(t.playlist_id, t.event_mode);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "vignettes" }, () => {
+        const t = tvRef.current;
+        if (t && t.vignettes_enabled) loadPlaylist(t.playlist_id, t.event_mode);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "media" }, () => {
         const t = tvRef.current;
@@ -532,7 +583,9 @@ export function TvPlayer() {
           row.expires_at && row.created_at
             ? Math.max(
                 5000,
-                new Date(row.expires_at).getTime() - new Date(row.created_at).getTime() - DELIVERY_GRACE_MS,
+                new Date(row.expires_at).getTime() -
+                  new Date(row.created_at).getTime() -
+                  DELIVERY_GRACE_MS,
               )
             : 20000;
         setTimeout(() => setAlertMsg(null), Math.min(ms, 120000));
@@ -644,8 +697,11 @@ export function TvPlayer() {
         !prev ||
         prev.is_paired !== row.is_paired ||
         prev.playlist_id !== row.playlist_id ||
-        prev.event_mode !== row.event_mode;
+        prev.event_mode !== row.event_mode ||
+        !!prev.vignettes_enabled !== !!row.vignettes_enabled ||
+        (!!row.vignettes_enabled && prev.orientation !== row.orientation);
       setTv(row);
+      tvRef.current = row;
       if (structural) refreshTv(id);
       runCommand(row.command);
     }, TV_GUARD_MS);
@@ -676,7 +732,8 @@ export function TvPlayer() {
       const row = data as unknown as Pick<TvRow, "is_endomarketing_active" | "endomarketing_state">;
       if (
         prev.is_endomarketing_active === row.is_endomarketing_active &&
-        JSON.stringify(prev.endomarketing_state || null) === JSON.stringify(row.endomarketing_state || null)
+        JSON.stringify(prev.endomarketing_state || null) ===
+          JSON.stringify(row.endomarketing_state || null)
       )
         return; // nada mudou: não re-renderiza
       setTv({ ...prev, ...row });
@@ -730,7 +787,6 @@ export function TvPlayer() {
   const currentQrUrl = (current && current.qr_url) || tv?.qr_url || null;
   currentRef.current = current;
 
-
   // ---------- QR code dinâmico ----------
   useEffect(() => {
     const url = currentQrUrl;
@@ -746,7 +802,9 @@ export function TvPlayer() {
   const liveOn = !!(tv && tv.is_live_active);
   // Endomarketing: assume a tela (o ao vivo tem prioridade). Estado inválido = ignora.
   const endoState = tv?.endomarketing_state || null;
-  const endoOn = !liveOn && !!(tv?.is_endomarketing_active && endoState && extractYoutubeId(endoState.videoId || ""));
+  const endoOn =
+    !liveOn &&
+    !!(tv?.is_endomarketing_active && endoState && extractYoutubeId(endoState.videoId || ""));
   const multizone = tv?.layout_mode === "multizone";
   const portrait = tv?.orientation === "portrait";
   const volume = typeof tv?.volume === "number" ? tv.volume : 100;
@@ -777,8 +835,7 @@ export function TvPlayer() {
     tv.welcome_until &&
     new Date(tv.welcome_until).getTime() > now
   );
-  const countdownMs =
-    tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
+  const countdownMs = tv?.countdown_ends_at ? new Date(tv.countdown_ends_at).getTime() - now : -1;
   const countdownOn = countdownMs > 0;
 
   // ---------- single-decoding: desmonta a mídia anterior antes de montar a próxima ----------
@@ -830,10 +887,13 @@ export function TvPlayer() {
 
     if (current.type === "video" || current.type === "youtube") {
       // fallback genérico até os metadados/onEnded chegarem
-      timerRef.current = setTimeout(() => {
-        console.warn("[player] watchdog genérico disparado, avançando mídia");
-        advance();
-      }, current.type === "youtube" ? Math.max(35, current.duration || 0) * 1000 : 35000);
+      timerRef.current = setTimeout(
+        () => {
+          console.warn("[player] watchdog genérico disparado, avançando mídia");
+          advance();
+        },
+        current.type === "youtube" ? Math.max(35, current.duration || 0) * 1000 : 35000,
+      );
     } else {
       timerRef.current = setTimeout(advance, Math.max(3, current.duration || 10) * 1000);
     }
@@ -854,10 +914,10 @@ export function TvPlayer() {
           console.warn("[player] onEnded não disparou, avanço forçado pelo watchdog");
           advance();
         },
-        (durationSeconds + 5) * 1000
+        (durationSeconds + 5) * 1000,
       );
     },
-    [advance]
+    [advance],
   );
 
   // reinicia spinner a cada mídia
@@ -870,24 +930,20 @@ export function TvPlayer() {
     };
   }, [index]);
 
-
   const handleMediaError = useCallback(
     (info?: string) => {
       console.warn(
         "[player] falha ao decodificar mídia:",
         currentRef.current?.title || "",
-        info || ""
+        info || "",
       );
       setMediaFailed(true);
       setMediaErrorCode(info || "desconhecido");
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
       errorTimerRef.current = setTimeout(advance, 3000);
     },
-    [advance]
+    [advance],
   );
-
-
-
 
   const overlays = (
     <>
@@ -912,7 +968,6 @@ export function TvPlayer() {
       {alertMsg ? <AlertOverlay message={alertMsg} /> : null}
     </>
   );
-
 
   const tickerVisible = multizone && tickerPosition !== "hidden";
   // rodapé (texto simples ou NEWS): usado na tela normal e no Endomarketing sem tela cheia
@@ -971,15 +1026,12 @@ export function TvPlayer() {
             }}
           />
           <p style={{ fontSize: "30px", marginTop: "32px", color: BRAND.yellow }}>
-            {offline
-              ? "Aguardando resposta da nuvem… Revalidando em 3s"
-              : "Sincronizando player…"}
+            {offline ? "Aguardando resposta da nuvem… Revalidando em 3s" : "Sincronizando player…"}
           </p>
           <p style={{ fontSize: "20px", marginTop: "40px", color: "#FFFFFF", opacity: 0.7 }}>
             {BRAND.slogan}
           </p>
         </div>
-
       </Stage>
     );
   }
@@ -1092,7 +1144,9 @@ export function TvPlayer() {
         ) : (
           <div style={{ textAlign: "center", color: "#FFFFFF" }}>
             <img src={LOGO_URL} alt="CENTERFRIOS" style={{ width: "320px", maxWidth: "60%" }} />
-            <p style={{ fontSize: "32px", marginTop: "24px", color: BRAND.yellow, fontWeight: 800 }}>
+            <p
+              style={{ fontSize: "32px", marginTop: "24px", color: BRAND.yellow, fontWeight: 800 }}
+            >
               CONECTANDO À TRANSMISSÃO AO VIVO…
             </p>
           </div>
@@ -1106,7 +1160,15 @@ export function TvPlayer() {
   if (spotlightOn && featured) {
     return (
       <Stage portrait={portrait}>
-        <div style={{ position: "absolute", inset: "24px", border: "10px solid " + BRAND.yellow, borderRadius: "22px", overflow: "hidden" }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: "24px",
+            border: "10px solid " + BRAND.yellow,
+            borderRadius: "22px",
+            overflow: "hidden",
+          }}
+        >
           <img
             src={featured.image_url}
             alt="Destaque do mural"
@@ -1266,8 +1328,6 @@ export function TvPlayer() {
 
       <Preloader item={nextItem} />
 
-
-
       {multizone ? (
         <>
           <div
@@ -1289,7 +1349,10 @@ export function TvPlayer() {
               <img
                 src={qrDataUrl}
                 alt="QR code"
-                style={{ height: (tv?.presence_logo_size || 96) + "px", width: (tv?.presence_logo_size || 96) + "px" }}
+                style={{
+                  height: (tv?.presence_logo_size || 96) + "px",
+                  width: (tv?.presence_logo_size || 96) + "px",
+                }}
               />
             ) : null}
           </div>
@@ -1409,7 +1472,6 @@ function MediaLayer({
   // antigo rotulava como "autoplay bloqueado" mesmo quando o vídeo já
   // estava tocando normalmente. O único fallback real agora vive no
   // onLoadedMetadata, e só age se o autoplay nativo de fato não rodou.
-
 
   // libera o decoder ao desmontar (single-decoding em Android/Fire OS)
   useEffect(() => {
@@ -1554,7 +1616,9 @@ function MediaLayer({
         key={mediaKey}
         src={layer.src}
         alt={layer.item.title}
-        className={objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"}
+        className={
+          objectFit === "cover" ? "w-full h-full object-cover" : "w-full h-full object-contain"
+        }
         onError={() => {
           console.warn("Falha ao carregar imagem:", layer.src);
           if (onError) onError("IMG_LOAD");
@@ -1760,9 +1824,7 @@ function Countdown({ label, ms }: { label: string | null; ms: number }) {
         color: "#FFFFFF",
       }}
     >
-      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>
-        {label || "Começa em"}
-      </p>
+      <p style={{ fontSize: "22px", fontWeight: 700, opacity: 0.9 }}>{label || "Começa em"}</p>
       <p style={{ fontSize: "56px", fontWeight: 800, color: BRAND.yellow, lineHeight: 1.1 }}>
         {mm}:{ss}
       </p>
@@ -1904,8 +1966,6 @@ function Preloader({ item }: { item: ResolvedItem | null }) {
   return <img key={item.media_id} src={item.url} alt="" style={{ display: "none" }} />;
 }
 
-
-
 /** Previsão do tempo (Maceió/AL) + cotação USD/EUR. Fontes públicas, sem chave de API. */
 function weatherEmoji(code: number | null): string {
   if (code === null) return "🌡️";
@@ -1960,7 +2020,9 @@ function InfoBar({
             const d = await r.json();
             if (!stop && typeof d?.current?.temperature_2m === "number") {
               setTemp(d.current.temperature_2m);
-              setWeatherCode(typeof d.current.weather_code === "number" ? d.current.weather_code : null);
+              setWeatherCode(
+                typeof d.current.weather_code === "number" ? d.current.weather_code : null,
+              );
               setIsDay(d.current.is_day !== 0);
             }
           } catch {
@@ -1975,7 +2037,9 @@ function InfoBar({
           setEur(typeof r.eur === "number" ? r.eur : null);
         } else {
           try {
-            const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Maceio" });
+            const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", {
+              timeZone: "America/Maceio",
+            });
             const res = await fetch("https://api.frankfurter.dev/v1/" + y + "?from=BRL&to=USD,EUR");
             const d = await res.json();
             if (stop) return;
@@ -2019,14 +2083,33 @@ function InfoBar({
       }}
     >
       {weatherReady ? (
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "22px", fontWeight: 800 }}>
-          <span>{!isDay && (weatherCode === 0 || weatherCode === 1) ? "🌙" : weatherEmoji(weatherCode)}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            fontSize: "22px",
+            fontWeight: 800,
+          }}
+        >
+          <span>
+            {!isDay && (weatherCode === 0 || weatherCode === 1) ? "🌙" : weatherEmoji(weatherCode)}
+          </span>
           <span>{Math.round(temp as number)}°C</span>
           <span style={{ fontSize: "14px", fontWeight: 600, opacity: 0.85 }}>Maceió</span>
         </div>
       ) : null}
       {currencyReady ? (
-        <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "16px", fontWeight: 700, color: BRAND.yellow }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "14px",
+            alignItems: "center",
+            fontSize: "16px",
+            fontWeight: 700,
+            color: BRAND.yellow,
+          }}
+        >
           {usd !== null ? <span>US$ {usd.toFixed(2).replace(".", ",")}</span> : null}
           {eur !== null ? <span>€ {eur.toFixed(2).replace(".", ",")}</span> : null}
         </div>
@@ -2209,7 +2292,16 @@ function NewsMarquee({ items }: { items: NewsTickerItem[] }) {
           {clock}
         </div>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: "40px", bottom: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: "40px",
+          bottom: 0,
+          overflow: "hidden",
+        }}
+      >
         <div
           style={{
             position: "absolute",

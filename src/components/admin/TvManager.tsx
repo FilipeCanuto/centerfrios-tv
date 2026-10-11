@@ -99,7 +99,10 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
 
   async function patchTv(tvId: string, changes: Record<string, unknown>, message?: string) {
     setTvs((prev) => prev.map((t) => (t.id === tvId ? ({ ...t, ...changes } as TvRow) : t)));
-    const { error } = await supabase.from("tvs").update(changes as never).eq("id", tvId);
+    const { error } = await supabase
+      .from("tvs")
+      .update(changes as never)
+      .eq("id", tvId);
 
     if (error) {
       toast.error("Falha ao aplicar a alteração");
@@ -150,11 +153,13 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
   const OFFLINE_ALERT_MS = 10 * 60 * 1000;
   const offlineAlerts = tvs.filter(
     (t) =>
-      t.is_paired && (!t.last_ping || Date.now() - new Date(t.last_ping).getTime() > OFFLINE_ALERT_MS),
+      t.is_paired &&
+      (!t.last_ping || Date.now() - new Date(t.last_ping).getTime() > OFFLINE_ALERT_MS),
   );
   useEffect(() => {
     const base = "Painel de Mídia Indoor | CENTERFRIOS";
-    document.title = offlineAlerts.length > 0 ? "(" + offlineAlerts.length + " offline) " + base : base;
+    document.title =
+      offlineAlerts.length > 0 ? "(" + offlineAlerts.length + " offline) " + base : base;
     return () => {
       document.title = base;
     };
@@ -173,12 +178,9 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
       return;
     }
     const removed = typeof data === "number" ? data : 0;
-    toast.success(
-      removed > 0 ? removed + " TV(s) removida(s)" : "Nenhuma TV fantasma encontrada",
-    );
+    toast.success(removed > 0 ? removed + " TV(s) removida(s)" : "Nenhuma TV fantasma encontrada");
     load();
   }
-
 
   return (
     <div className="space-y-5">
@@ -245,16 +247,23 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
         </div>
       </div>
 
-
       {offlineAlerts.length > 0 ? (
         <div
           role="alert"
           className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
         >
-          {offlineAlerts.length === 1 ? "1 TV pareada está sem sinal" : offlineAlerts.length + " TVs pareadas estão sem sinal"}{" "}
+          {offlineAlerts.length === 1
+            ? "1 TV pareada está sem sinal"
+            : offlineAlerts.length + " TVs pareadas estão sem sinal"}{" "}
           há mais de 10 minutos:{" "}
           {offlineAlerts
-            .map((t) => t.name + (t.last_ping ? " (último sinal " + new Date(t.last_ping).toLocaleTimeString("pt-BR") + ")" : " (nunca conectou)"))
+            .map(
+              (t) =>
+                t.name +
+                (t.last_ping
+                  ? " (último sinal " + new Date(t.last_ping).toLocaleTimeString("pt-BR") + ")"
+                  : " (nunca conectou)"),
+            )
             .join("; ")}
           . Verifique energia, internet e o Fire TV Stick.
         </div>
@@ -296,7 +305,9 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 >
                   <span
                     className={
-                      online ? "cf-dot-online h-2 w-2" : "h-2 w-2 rounded-full bg-muted-foreground/60"
+                      online
+                        ? "cf-dot-online h-2 w-2"
+                        : "h-2 w-2 rounded-full bg-muted-foreground/60"
                     }
                   />
                   {online ? "Online" : "Offline"}
@@ -358,10 +369,12 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 <div className="space-y-1.5">
                   <Label className="text-xs">Layout</Label>
                   <div className="flex gap-1 rounded-xl bg-secondary p-1">
-                    {([
-                      ["fullscreen", "Tela cheia", Maximize],
-                      ["multizone", "Multi-zona", LayoutGrid],
-                    ] as const).map(([value, label, Icon]) => (
+                    {(
+                      [
+                        ["fullscreen", "Tela cheia", Maximize],
+                        ["multizone", "Multi-zona", LayoutGrid],
+                      ] as const
+                    ).map(([value, label, Icon]) => (
                       <button
                         key={value}
                         type="button"
@@ -382,10 +395,12 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 <div className="space-y-1.5">
                   <Label className="text-xs">Orientação</Label>
                   <div className="flex gap-1 rounded-xl bg-secondary p-1">
-                    {([
-                      ["landscape", "16:9"],
-                      ["portrait", "9:16"],
-                    ] as const).map(([value, label]) => (
+                    {(
+                      [
+                        ["landscape", "16:9"],
+                        ["portrait", "9:16"],
+                      ] as const
+                    ).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"
@@ -534,7 +549,6 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                 </div>
               </div>
 
-
               <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-secondary/40 px-3 py-2">
                 <Label htmlFor={"event-" + tv.id} className="text-xs font-bold">
                   Exibir mural de eventos
@@ -567,6 +581,26 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                     id={"currency-" + tv.id}
                     checked={tv.show_currency}
                     onCheckedChange={(v) => patchTv(tv.id, { show_currency: v })}
+                  />
+                </div>
+                {/* Vinhetas: intercala a lista da orientação desta TV (aba Vinhetas) com a playlist */}
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 sm:col-span-2">
+                  <Label htmlFor={"vig-" + tv.id} className="text-xs font-bold">
+                    Intercalar vinhetas (
+                    {tv.orientation === "portrait" ? "lista vertical" : "lista horizontal"})
+                  </Label>
+                  <Switch
+                    id={"vig-" + tv.id}
+                    checked={!!tv.vignettes_enabled}
+                    onCheckedChange={(v) =>
+                      patchTv(
+                        tv.id,
+                        { vignettes_enabled: v },
+                        v
+                          ? "Vinhetas ligadas: a TV intercala vinheta + mídia"
+                          : "Vinhetas desligadas",
+                      )
+                    }
                   />
                 </div>
               </div>
@@ -617,7 +651,9 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                       <Label className="text-xs">Atualizar notícias a cada</Label>
                       <Select
                         value={String(tv.news_interval_min || 30)}
-                        onValueChange={(v) => patchTv(tv.id, { news_interval_min: parseInt(v, 10) })}
+                        onValueChange={(v) =>
+                          patchTv(tv.id, { news_interval_min: parseInt(v, 10) })
+                        }
                       >
                         <SelectTrigger className="h-10 rounded-xl">
                           <SelectValue />
@@ -633,14 +669,17 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs" htmlFor={"nq-" + tv.id}>
-                      Buscas de notícias (uma por linha; opcional prefixo de peso 1-3, ex.: 3|câmara fria). Vazio = padrão Center Frios
+                      Buscas de notícias (uma por linha; opcional prefixo de peso 1-3, ex.: 3|câmara
+                      fria). Vazio = padrão Center Frios
                     </Label>
                     <Textarea
                       id={"nq-" + tv.id}
                       rows={4}
                       defaultValue={tv.news_queries || ""}
                       placeholder={'3|("câmara fria" OR "balcão refrigerado") when:14d'}
-                      onBlur={(e) => patchTv(tv.id, { news_queries: e.target.value.trim() || null })}
+                      onBlur={(e) =>
+                        patchTv(tv.id, { news_queries: e.target.value.trim() || null })
+                      }
                       className="rounded-xl text-xs"
                     />
                   </div>
@@ -652,7 +691,9 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                       id={"nx-" + tv.id}
                       rows={2}
                       defaultValue={tv.news_exclude || ""}
-                      onBlur={(e) => patchTv(tv.id, { news_exclude: e.target.value.trim() || null })}
+                      onBlur={(e) =>
+                        patchTv(tv.id, { news_exclude: e.target.value.trim() || null })
+                      }
                       className="rounded-xl text-xs"
                     />
                   </div>
@@ -758,7 +799,6 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
