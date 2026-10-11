@@ -15,6 +15,13 @@
       "when": 1791754880861,
       "tag": "0001_add_vignettes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791756381678,
+      "tag": "0002_add_play_logs",
+      "breakpoints": true
     }
   ]
 }

@@ -269,6 +269,30 @@ export type Database = {
         }
         Relationships: []
       }
+      play_logs: {
+        Row: {
+          day: string
+          media_id: string
+          plays: number
+          tv_id: string
+          updated_at: string
+        }
+        Insert: {
+          day?: string
+          media_id: string
+          plays?: number
+          tv_id: string
+          updated_at?: string
+        }
+        Update: {
+          day?: string
+          media_id?: string
+          plays?: number
+          tv_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       playlists: {
         Row: {
           created_at: string
@@ -533,6 +557,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      log_plays: { Args: { _items: Json; _tv: string }; Returns: undefined }
       register_tv_device:
         | { Args: { _code?: string; _device_uuid: string }; Returns: Json }
         | { Args: { p_device_uuid: string }; Returns: Json }
