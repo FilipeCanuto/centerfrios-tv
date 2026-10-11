@@ -269,6 +269,30 @@ export type Database = {
         }
         Relationships: []
       }
+      play_logs: {
+        Row: {
+          day: string
+          media_id: string
+          plays: number
+          tv_id: string
+          updated_at: string
+        }
+        Insert: {
+          day?: string
+          media_id: string
+          plays?: number
+          tv_id: string
+          updated_at?: string
+        }
+        Update: {
+          day?: string
+          media_id?: string
+          plays?: number
+          tv_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       playlists: {
         Row: {
           created_at: string
@@ -351,8 +375,8 @@ export type Database = {
           sponsors_enabled: boolean
           ticker_position: string
           ticker_text: string | null
-          vignettes_enabled: boolean
           vignette_playlist_id: string | null
+          vignettes_enabled: boolean
           volume: number
           welcome_message: string | null
           welcome_until: string | null
@@ -396,8 +420,8 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
-          vignettes_enabled?: boolean
           vignette_playlist_id?: string | null
+          vignettes_enabled?: boolean
           volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
@@ -441,8 +465,8 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
-          vignettes_enabled?: boolean
           vignette_playlist_id?: string | null
+          vignettes_enabled?: boolean
           volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
@@ -453,6 +477,13 @@ export type Database = {
             columns: ["playlist_id"]
             isOneToOne: false
             referencedRelation: "playlists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tvs_vignette_playlist_id_fkey"
+            columns: ["vignette_playlist_id"]
+            isOneToOne: false
+            referencedRelation: "vignette_playlists"
             referencedColumns: ["id"]
           },
         ]
@@ -533,7 +564,15 @@ export type Database = {
           video_id?: string
           youtube_url?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vignettes_playlist_id_fkey"
+            columns: ["playlist_id"]
+            isOneToOne: false
+            referencedRelation: "vignette_playlists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -560,6 +599,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      log_plays: { Args: { _items: Json; _tv: string }; Returns: undefined }
       register_tv_device:
         | { Args: { _code?: string; _device_uuid: string }; Returns: Json }
         | { Args: { p_device_uuid: string }; Returns: Json }
