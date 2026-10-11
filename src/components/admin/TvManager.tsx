@@ -45,6 +45,10 @@ import {
 export function TvManager({ onChanged }: { onChanged?: () => void }) {
   const [tvs, setTvs] = useState<TvRow[]>([]);
   const [playlists, setPlaylists] = useState<{ id: string; name: string }[]>([]);
+  // playlists de vinhetas (null = tabela ainda não existe: mostra a chave antiga)
+  const [vigPlaylists, setVigPlaylists] = useState<
+    { id: string; name: string; orientation: string }[] | null
+  >(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,6 +62,13 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
     ]);
     setTvs((t || []) as unknown as TvRow[]);
     setPlaylists((p || []) as unknown as { id: string; name: string }[]);
+    const vp = await supabase
+      .from("vignette_playlists")
+      .select("id,name,orientation")
+      .order("created_at");
+    setVigPlaylists(
+      vp.error ? null : ((vp.data || []) as { id: string; name: string; orientation: string }[]),
+    );
     if (onChanged) onChanged();
   }
 
@@ -583,26 +594,54 @@ export function TvManager({ onChanged }: { onChanged?: () => void }) {
                     onCheckedChange={(v) => patchTv(tv.id, { show_currency: v })}
                   />
                 </div>
-                {/* Vinhetas: intercala a lista da orientação desta TV (aba Vinhetas) com a playlist */}
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 sm:col-span-2">
-                  <Label htmlFor={"vig-" + tv.id} className="text-xs font-bold">
-                    Intercalar vinhetas (
-                    {tv.orientation === "portrait" ? "lista vertical" : "lista horizontal"})
-                  </Label>
-                  <Switch
-                    id={"vig-" + tv.id}
-                    checked={!!tv.vignettes_enabled}
-                    onCheckedChange={(v) =>
-                      patchTv(
-                        tv.id,
-                        { vignettes_enabled: v },
-                        v
-                          ? "Vinhetas ligadas: a TV intercala vinheta + mídia"
-                          : "Vinhetas desligadas",
-                      )
-                    }
-                  />
-                </div>
+                {/* Vinhetas: playlist de vinhetas intercalada com a playlist desta TV (aba Vinhetas) */}
+                {vigPlaylists ? (
+                  <div className="grid gap-1 rounded-xl border border-border bg-secondary/40 px-3 py-2 sm:col-span-2">
+                    <Label className="text-xs font-bold">Playlist de vinhetas</Label>
+                    <Select
+                      value={tv.vignette_playlist_id || "none"}
+                      onValueChange={(v) =>
+                        patchTv(
+                          tv.id,
+                          { vignette_playlist_id: v === "none" ? null : v },
+                          v === "none"
+                            ? "Vinhetas desligadas nesta TV"
+                            : "Vinhetas: a TV intercala vinheta + mídia",
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-9 rounded-lg">
+                        <SelectValue placeholder="Sem vinhetas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem vinhetas</SelectItem>
+                        {vigPlaylists.map((vp) => (
+                          <SelectItem key={vp.id} value={vp.id}>
+                            {vp.name} ({vp.orientation === "portrait" ? "vertical" : "horizontal"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 sm:col-span-2">
+                    <Label htmlFor={"vig-" + tv.id} className="text-xs font-bold">
+                      Intercalar vinhetas (
+                      {tv.orientation === "portrait" ? "lista vertical" : "lista horizontal"})
+                    </Label>
+                    <Switch
+                      id={"vig-" + tv.id}
+                      checked={!!tv.vignettes_enabled}
+                      onCheckedChange={(v) =>
+                        patchTv(
+                          tv.id,
+                          { vignettes_enabled: v },
+                          v ? "Vinhetas ligadas" : "Vinhetas desligadas",
+                        )
+                      }
+                    />
+                  </div>
+                )}
               </div>
 
               {tv.layout_mode === "multizone" ? (

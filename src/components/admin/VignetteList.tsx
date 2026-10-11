@@ -1,4 +1,4 @@
-// Uma lista de vinhetas (vertical OU horizontal): colar link do YouTube, ordenar, ativar, remover.
+// Vídeos de UMA playlist de vinhetas: colar link do YouTube, ordenar, ativar, remover. Sem limite.
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { extractYoutubeId, type Vignette } from "@/lib/centerfrios";
@@ -10,10 +10,12 @@ import { toast } from "sonner";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 
 export function VignetteList({
+  playlistId,
   orientation,
   items,
   onChanged,
 }: {
+  playlistId: string;
   orientation: "portrait" | "landscape";
   items: Vignette[];
   onChanged: () => void;
@@ -21,7 +23,6 @@ export function VignetteList({
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
-  const label = orientation === "portrait" ? "vertical" : "horizontal";
 
   async function add() {
     const id = extractYoutubeId(url);
@@ -30,6 +31,7 @@ export function VignetteList({
     const name = title.trim() || (await fetchYoutubeTitle(id));
     const max = items.reduce((m, v) => Math.max(m, v.order_index), 0);
     const { error } = await supabase.from("vignettes").insert({
+      playlist_id: playlistId,
       orientation,
       youtube_url: url.trim(),
       video_id: id,
@@ -41,7 +43,7 @@ export function VignetteList({
       return toast.error("Não foi possível adicionar (a migration das vinhetas já foi aplicada?)");
     setUrl("");
     setTitle("");
-    toast.success("Vinheta " + label + " adicionada");
+    toast.success("Vinheta adicionada");
     onChanged();
   }
 
@@ -52,7 +54,7 @@ export function VignetteList({
     const tmp = next[index];
     next[index] = next[j];
     next[j] = tmp;
-    // regrava a ordem 1..n (listas curtas)
+    // regrava a ordem 1..n
     const res = await Promise.all(
       next.map((v, i) =>
         supabase
@@ -79,7 +81,7 @@ export function VignetteList({
   }
 
   const activeCount = items.filter((v) => v.active).length;
-  // posição de cada vinheta ATIVA na alternância (1ª ativa = antes do item 1, 2ª = antes do item 2...)
+  // posição de cada vinheta ATIVA na sequência
   const activePos: Record<string, number> = {};
   items
     .filter((v) => v.active)
@@ -90,10 +92,7 @@ export function VignetteList({
   return (
     <section className="cf-card p-5">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-base font-extrabold">
-          Vinhetas{" "}
-          {orientation === "portrait" ? "verticais (TV em pé)" : "horizontais (TV deitada)"}
-        </h3>
+        <h3 className="text-base font-extrabold">Vídeos desta playlist de vinhetas</h3>
         <span className="shrink-0 text-xs text-muted-foreground">
           {activeCount} ativa{activeCount === 1 ? "" : "s"}
         </span>
@@ -105,7 +104,7 @@ export function VignetteList({
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://www.youtube.com/watch?v=... ou youtu.be/..."
           className="h-10 rounded-xl"
-          aria-label={"Link do YouTube da vinheta " + label}
+          aria-label="Link do YouTube da vinheta"
         />
         <Input
           value={title}
@@ -124,7 +123,7 @@ export function VignetteList({
           <li
             key={v.id}
             className={
-              "flex min-w-0 items-center gap-3 rounded-xl border p-2 " +
+              "flex min-w-0 flex-wrap items-center gap-3 rounded-xl border p-2 " +
               (v.active
                 ? "border-border bg-card"
                 : "border-dashed border-border bg-muted/40 opacity-70")
@@ -142,22 +141,19 @@ export function VignetteList({
                 (orientation === "portrait" ? "h-16 w-9" : "h-10 w-16")
               }
             />
-            <span className="min-w-0 flex-1">
+            <span className="min-w-0 flex-1 basis-40">
               <span className="cf-title text-sm font-bold" title={v.title || v.youtube_url}>
                 {v.title || "Vídeo " + v.video_id}
               </span>
               <span className="text-[11px] text-muted-foreground">
                 {v.active
-                  ? "antes do item " +
-                    activePos[v.id] +
-                    " da playlist" +
-                    (activeCount > 1
-                      ? " (repete a cada " + activeCount + " itens)"
-                      : " (antes de todos)")
+                  ? activePos[v.id] +
+                    "ª da sequência" +
+                    (activeCount > 1 ? " de " + activeCount : "")
                   : "desativada (não toca)"}
               </span>
             </span>
-            <span className="flex shrink-0 items-center gap-1">
+            <span className="ml-auto flex shrink-0 items-center gap-1">
               <Switch
                 checked={v.active}
                 onCheckedChange={(x) => setActive(v, x)}
@@ -197,7 +193,7 @@ export function VignetteList({
         ))}
         {items.length === 0 ? (
           <li className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-            Nenhuma vinheta {label}. Cole um link do YouTube acima.
+            Nenhuma vinheta nesta playlist. Cole um link do YouTube acima.
           </li>
         ) : null}
       </ol>

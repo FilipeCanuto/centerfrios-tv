@@ -97,6 +97,8 @@ export type TvRow = {
   is_endomarketing_active?: boolean;
   // Vinhetas intercaladas (migration 20261011120000)
   vignettes_enabled?: boolean;
+  // Playlist de vinhetas atribuída à TV (migration 20261012120000); null = sem vinhetas
+  vignette_playlist_id?: string | null;
   endomarketing_state?: EndoState | null;
 };
 
@@ -201,6 +203,14 @@ export const TV_ENDO_COLUMNS = "is_endomarketing_active,endomarketing_state";
 export const TV_SELECT_COLUMNS_ENDO = TV_SELECT_COLUMNS_FULL + "," + TV_ENDO_COLUMNS;
 // Vinhetas (migration 20261011120000): mesmo esquema de reserva.
 export const TV_SELECT_COLUMNS_VIG = TV_SELECT_COLUMNS_ENDO + ",vignettes_enabled";
+export const TV_SELECT_COLUMNS_VIGPL = TV_SELECT_COLUMNS_VIG + ",vignette_playlist_id";
+
+export type VignettePlaylist = {
+  id: string;
+  name: string;
+  orientation: "portrait" | "landscape";
+  created_at: string;
+};
 
 export type Vignette = {
   id: string;
@@ -211,6 +221,7 @@ export type Vignette = {
   order_index: number;
   active: boolean;
   created_at?: string;
+  playlist_id?: string | null;
 };
 
 export type NewsTickerItem = { text: string; source: string; promo?: boolean };

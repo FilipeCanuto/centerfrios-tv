@@ -10,6 +10,7 @@ import {
   LOGO_URL,
   TV_SELECT_COLUMNS_ENDO,
   TV_SELECT_COLUMNS_VIG,
+  TV_SELECT_COLUMNS_VIGPL,
   extractYoutubeId as ytIdOf,
   TV_SELECT_COLUMNS_FULL,
   TV_SELECT_COLUMNS_LEGACY,
@@ -55,7 +56,18 @@ let useLegacyTvColumns = false;
 // Endomarketing: se as colunas ainda não existem no banco, cai para FULL e re-tenta em 10 min.
 let endoColsRetryAt = 0;
 let vigColsRetryAt = 0;
+let vigPlColsRetryAt = 0;
 async function queryTv(id: string) {
+  if (
+    !useLegacyTvColumns &&
+    Date.now() >= endoColsRetryAt &&
+    Date.now() >= vigColsRetryAt &&
+    Date.now() >= vigPlColsRetryAt
+  ) {
+    const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_VIGPL).eq("id", id).maybeSingle();
+    if (!r.error) return r;
+    vigPlColsRetryAt = Date.now() + 10 * 60 * 1000; // coluna da playlist de vinhetas ainda não existe
+  }
   if (!useLegacyTvColumns && Date.now() >= endoColsRetryAt && Date.now() >= vigColsRetryAt) {
     const r = await supabase.from("tvs").select(TV_SELECT_COLUMNS_VIG).eq("id", id).maybeSingle();
     if (!r.error) return r;
@@ -349,13 +361,18 @@ export function TvPlayer() {
       // Vinhetas intercaladas (mesma regra do player-engine.js): v1, item1, v2, item2...
       // Lista da orientação da TV; menos vinhetas que itens = recomeçam. Falha = playlist normal.
       const tvNowRow = tvRef.current;
-      if (tvNowRow?.vignettes_enabled && resolved.length) {
-        const ori = tvNowRow.orientation === "portrait" ? "portrait" : "landscape";
-        const { data: vrows, error: verr } = await supabase
+      // playlist de vinhetas atribuída à TV; reserva (migration nova não aplicada): chave + orientação
+      const vigPl = tvNowRow?.vignette_playlist_id;
+      const legacyVig = !!tvNowRow?.vignettes_enabled && vigPl === undefined;
+      if ((vigPl || legacyVig) && resolved.length) {
+        let q = supabase
           .from("vignettes")
           .select("id,youtube_url,video_id,title")
-          .eq("active", true)
-          .eq("orientation", ori)
+          .eq("active", true);
+        q = vigPl
+          ? q.eq("playlist_id", vigPl)
+          : q.eq("orientation", tvNowRow?.orientation === "portrait" ? "portrait" : "landscape");
+        const { data: vrows, error: verr } = await q
           .order("order_index", { ascending: true })
           .order("id", { ascending: true });
         const vigs = verr
@@ -371,18 +388,24 @@ export function TvPlayer() {
               .map((v) => ({ id: v.id, vid: ytIdOf(v.video_id || v.youtube_url), title: v.title }))
               .filter((v) => !!v.vid);
         if (vigs.length) {
+          // vinheta 1, item 1, vinheta 2, item 2... cada sequência no seu ritmo até o fim (mmc pares)
           const base = resolved.splice(0, resolved.length);
-          base.forEach((it, i) => {
-            const v = vigs[i % vigs.length];
+          const n = base.length;
+          const v = vigs.length;
+          const gcd = (x: number, y: number): number => (y ? gcd(y, x % y) : x);
+          let pairs = (n / gcd(n, v)) * v;
+          if (pairs > 3000) pairs = Math.max(n, v);
+          for (let i = 0; i < pairs; i++) {
+            const vg = vigs[i % v];
             resolved.push({
-              media_id: "vig-" + v.id,
-              url: "https://www.youtube.com/watch?v=" + v.vid,
+              media_id: "vig-" + vg.id,
+              url: "https://www.youtube.com/watch?v=" + vg.vid,
               type: "youtube",
-              title: v.title || "Vinheta",
+              title: vg.title || "Vinheta",
               duration: 10,
             });
-            resolved.push(it);
-          });
+            resolved.push(base[i % n]);
+          }
         }
       }
 
@@ -546,6 +569,7 @@ export function TvPlayer() {
             row.event_mode !== prev.event_mode ||
             row.is_paired !== prev.is_paired ||
             !!row.vignettes_enabled !== !!prev.vignettes_enabled ||
+            row.vignette_playlist_id !== prev.vignette_playlist_id ||
             (!!row.vignettes_enabled && row.orientation !== prev.orientation)
           ) {
             loadPlaylist(row.playlist_id, row.event_mode);
@@ -560,7 +584,8 @@ export function TvPlayer() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "vignettes" }, () => {
         const t = tvRef.current;
-        if (t && t.vignettes_enabled) loadPlaylist(t.playlist_id, t.event_mode);
+        if (t && (t.vignette_playlist_id || t.vignettes_enabled))
+          loadPlaylist(t.playlist_id, t.event_mode);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "media" }, () => {
         const t = tvRef.current;
@@ -699,6 +724,7 @@ export function TvPlayer() {
         prev.playlist_id !== row.playlist_id ||
         prev.event_mode !== row.event_mode ||
         !!prev.vignettes_enabled !== !!row.vignettes_enabled ||
+        prev.vignette_playlist_id !== row.vignette_playlist_id ||
         (!!row.vignettes_enabled && prev.orientation !== row.orientation);
       setTv(row);
       tvRef.current = row;

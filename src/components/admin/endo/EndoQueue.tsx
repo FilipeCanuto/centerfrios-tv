@@ -122,7 +122,7 @@ export function EndoQueue({
             <li
               key={it.id}
               className={
-                "flex items-center gap-3 rounded-xl border p-2 " +
+                "flex flex-wrap items-center gap-3 rounded-xl border p-2 " +
                 (playingNow ? "border-primary bg-secondary/60" : "border-border bg-card")
               }
             >
@@ -131,7 +131,7 @@ export function EndoQueue({
                 alt=""
                 className="h-12 w-20 shrink-0 rounded-md bg-black object-cover"
               />
-              <span className="min-w-0 flex-1">
+              <span className="min-w-0 flex-1 basis-40">
                 <span className="cf-title text-sm font-bold">
                   {it.title || "Vídeo " + it.video_id}
                 </span>
@@ -139,7 +139,7 @@ export function EndoQueue({
                   {i + 1}º na fila{playingNow ? " · tocando agora" : ""}
                 </span>
               </span>
-              <span className="flex shrink-0 items-center gap-1">
+              <span className="ml-auto flex shrink-0 items-center gap-1">
                 <Button
                   size="icon"
                   variant="ghost"

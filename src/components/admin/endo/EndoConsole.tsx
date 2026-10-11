@@ -48,7 +48,7 @@ export function EndoConsole({
   const on = !!state;
   return (
     <section className="cf-card overflow-hidden">
-      <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="relative aspect-video bg-black">
           {state ? (
             <img
@@ -69,7 +69,7 @@ export function EndoConsole({
           ) : null}
         </div>
 
-        <div className="grid content-start gap-4 p-5">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4 p-5">
           <div className="min-w-0">
             <h3 className="text-base font-extrabold">Mesa de Controle</h3>
             {state ? (
@@ -91,7 +91,7 @@ export function EndoConsole({
               <Button
                 onClick={onPause}
                 disabled={!on || busy}
-                className="h-11 rounded-xl px-5 font-extrabold"
+                className="h-auto min-h-11 whitespace-normal rounded-xl px-5 py-2 font-extrabold"
               >
                 <Pause className="mr-2 h-4 w-4" /> Pausar
               </Button>
@@ -99,7 +99,7 @@ export function EndoConsole({
               <Button
                 onClick={onPlay}
                 disabled={!on || busy}
-                className="h-11 rounded-xl px-5 font-extrabold"
+                className="h-auto min-h-11 whitespace-normal rounded-xl px-5 py-2 font-extrabold"
               >
                 <Play className="mr-2 h-4 w-4" /> Play
               </Button>
@@ -108,7 +108,7 @@ export function EndoConsole({
               variant="secondary"
               onClick={onRestart}
               disabled={!on || busy}
-              className="h-11 rounded-xl font-bold"
+              className="h-auto min-h-11 whitespace-normal rounded-xl py-2 font-bold"
             >
               <RotateCcw className="mr-2 h-4 w-4" /> Início (0:00)
             </Button>
@@ -116,7 +116,7 @@ export function EndoConsole({
               variant="secondary"
               onClick={onNext}
               disabled={!on || busy || !hasNext}
-              className="h-11 rounded-xl font-bold"
+              className="h-auto min-h-11 whitespace-normal rounded-xl py-2 font-bold"
             >
               <SkipForward className="mr-2 h-4 w-4" /> Próximo da fila
             </Button>
@@ -127,7 +127,7 @@ export function EndoConsole({
               variant={state?.loop ? "default" : "outline"}
               onClick={onLoop}
               disabled={!on || busy}
-              className="rounded-xl font-bold"
+              className="h-auto min-h-9 whitespace-normal rounded-xl py-2 font-bold"
               aria-pressed={!!state?.loop}
             >
               <Repeat className="mr-2 h-4 w-4" /> Loop {state?.loop ? "ligado" : "desligado"}
@@ -136,7 +136,7 @@ export function EndoConsole({
               variant={state?.fullscreen ? "default" : "outline"}
               onClick={onFullscreen}
               disabled={!on || busy}
-              className="rounded-xl font-bold"
+              className="h-auto min-h-9 whitespace-normal rounded-xl py-2 font-bold"
               aria-pressed={!!state?.fullscreen}
             >
               {state?.fullscreen ? (
@@ -175,9 +175,10 @@ export function EndoConsole({
             variant="destructive"
             onClick={onEnd}
             disabled={busy}
-            className="h-12 rounded-xl text-base font-extrabold"
+            className="h-auto min-h-12 w-full whitespace-normal rounded-xl py-3 text-base font-extrabold"
           >
-            <Power className="mr-2 h-5 w-5" /> Encerrar Atividade / Voltar à Programação Normal
+            <Power className="mr-2 h-5 w-5 shrink-0" /> Encerrar Atividade / Voltar à Programação
+            Normal
           </Button>
         </div>
       </div>

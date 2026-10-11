@@ -30,10 +30,12 @@
      se o banco ainda não tem alguma coluna, desliga o grupo MAIS NOVO ligado, re-tenta na hora
      e volta a pedir o grupo em 10 min. Assim publicar antes da migration nunca quebra o resto. */
   var TV_COLS_VIG = ",vignettes_enabled";
+  var TV_COLS_VIGPL = ",vignette_playlist_id";   /* migration 20261012120000 */
   var colGroups = [
     { cols: TV_COLS_NEWS, on: true, retryAt: 0 },
     { cols: TV_COLS_ENDO, on: true, retryAt: 0 },
-    { cols: TV_COLS_VIG, on: true, retryAt: 0 }
+    { cols: TV_COLS_VIG, on: true, retryAt: 0 },
+    { cols: TV_COLS_VIGPL, on: true, retryAt: 0 }
   ];
   var NEWS_PROMO_EVERY = 4;
 
@@ -447,6 +449,7 @@
       var structural = !prev || prev.playlist_id !== row.playlist_id ||
         prev.event_mode !== row.event_mode || prev.is_paired !== row.is_paired ||
         !!prev.vignettes_enabled !== !!row.vignettes_enabled ||
+        prev.vignette_playlist_id !== row.vignette_playlist_id ||
         (!!row.vignettes_enabled && prev.orientation !== row.orientation);
 
       if (!row.is_paired && !row.playlist_id && !row.event_mode) {
@@ -1428,15 +1431,24 @@
 
   /* ---------------- playlist (RPC + fallback direto) ---------------- */
   /* ---------------- vinhetas intercaladas ----------------
-     Com tvs.vignettes_enabled ligado, a TV busca a lista de vinhetas da SUA orientação
-     (vertical = TV em pé / horizontal) e monta: vinheta 1, item 1, vinheta 2, item 2, ...
-     Se houver menos vinhetas que itens, elas recomeçam (v1, v2, v1, v2...). A vinheta herda a
-     agenda do item seguinte: item fora do horário = o par (vinheta + item) é pulado junto.
-     Qualquer falha (tabela ainda não existe, sem rede, lista vazia) = playlist normal. */
+     Cada TV tem (ou não) uma playlist de vinhetas atribuída (tvs.vignette_playlist_id).
+     A TV monta: vinheta 1, item 1, vinheta 2, item 2, ... As DUAS sequências andam cada uma no
+     seu ritmo e só recomeçam quando chegam ao fim: com 3 itens e 5 vinhetas toca
+     v1 i1 v2 i2 v3 i3 v4 i1 v5 i2 v1 i3 ... (nenhuma vinheta fica de fora, sem limite de quantidade).
+     A lista completa tem mmc(itens, vinhetas) pares (até MAX_VIG_PAIRS).
+     A vinheta herda a agenda do item seguinte: item fora do horário = o par é pulado junto.
+     Reserva (migration nova ainda não aplicada): "Intercalar vinhetas" + lista da orientação.
+     Qualquer falha (sem rede, lista vazia) = playlist normal. */
+  var MAX_VIG_PAIRS = 3000;
+  function gcd(a, b) { while (b) { var t = b; b = a % b; a = t; } return a; }
   function withVignettes(list, done) {
-    if (!tv || !tv.vignettes_enabled || !list.length) { done(); return; }
-    var ori = tv.orientation === "portrait" ? "portrait" : "landscape";
-    req("GET", "/rest/v1/vignettes?select=id,youtube_url,video_id,title&active=is.true&orientation=eq." + ori +
+    if (!tv || !list.length) { done(); return; }
+    var filter;
+    if (tv.vignette_playlist_id) filter = "&playlist_id=eq." + tv.vignette_playlist_id;
+    else if (tv.vignettes_enabled && tv.vignette_playlist_id === undefined) {
+      filter = "&orientation=eq." + (tv.orientation === "portrait" ? "portrait" : "landscape");
+    } else { done(); return; }
+    req("GET", "/rest/v1/vignettes?select=id,youtube_url,video_id,title&active=is.true" + filter +
       "&order=order_index.asc,id.asc", null, function (err, rows) {
       if (err || !rows || !rows.length) { done(); return; }
       var vigs = [], i;
@@ -1445,14 +1457,17 @@
         if (vid) vigs.push({ id: rows[i].id, vid: vid, title: rows[i].title || "Vinheta" });
       }
       if (!vigs.length) { done(); return; }
+      var n = list.length, v = vigs.length;
+      var pairs = n / gcd(n, v) * v;                     /* mmc: as duas sequências fecham juntas */
+      if (pairs > MAX_VIG_PAIRS) pairs = Math.max(n, v); /* listas enormes: ainda passa por todas */
       var out = [];
-      for (i = 0; i < list.length; i++) {
-        var v = vigs[i % vigs.length], it = list[i], vg = {
-          media_id: "vig-" + v.id, url: "https://www.youtube.com/watch?v=" + v.vid, type: "youtube",
-          title: v.title, qr_url: null, duration: 10
+      for (i = 0; i < pairs; i++) {
+        var vg = vigs[i % v], it = list[i % n], item = {
+          media_id: "vig-" + vg.id, url: "https://www.youtube.com/watch?v=" + vg.vid, type: "youtube",
+          title: vg.title, qr_url: null, duration: 10
         };
-        if (it.sched) vg.sched = it.sched;
-        out.push(vg);
+        if (it.sched) item.sched = it.sched;
+        out.push(item);
         out.push(it);
       }
       list.length = 0;
