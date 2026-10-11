@@ -351,8 +351,8 @@ export type Database = {
           sponsors_enabled: boolean
           ticker_position: string
           ticker_text: string | null
-          volume: number
           vignettes_enabled: boolean
+          volume: number
           welcome_message: string | null
           welcome_until: string | null
         }
@@ -395,8 +395,8 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
-          volume?: number
           vignettes_enabled?: boolean
+          volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
         }
@@ -439,8 +439,8 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
-          volume?: number
           vignettes_enabled?: boolean
+          volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
         }
