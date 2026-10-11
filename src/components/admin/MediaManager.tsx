@@ -181,7 +181,9 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
           rows.length +
           " vídeo" +
           (rows.length === 1 ? "" : "s") +
-          (skipped ? " (" + skipped + " já existia" + (skipped === 1 ? "" : "m") + " na galeria)" : ""),
+          (skipped
+            ? " (" + skipped + " já existia" + (skipped === 1 ? "" : "m") + " na galeria)"
+            : ""),
       );
       setYtUrl("");
       load();
@@ -262,7 +264,8 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
       if (token) xhr.setRequestHeader("authorization", "Bearer " + token);
       xhr.setRequestHeader("x-upsert", "true");
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) patch(item.id, { progress: Math.round((e.loaded / e.total) * 100) });
+        if (e.lengthComputable)
+          patch(item.id, { progress: Math.round((e.loaded / e.total) * 100) });
       };
       xhr.onload = () =>
         xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(xhr.responseText));
@@ -371,7 +374,28 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
       toast.error("Não foi possível excluir");
       return;
     }
-    toast.success("Mídia excluída");
+    // tira a mídia excluída de todas as playlists (não sobra item "Mídia removida")
+    let removedFrom = 0;
+    const { data: pls } = await supabase.from("playlists").select("id,items");
+    for (const p of (pls || []) as { id: string; items: unknown }[]) {
+      const list = Array.isArray(p.items) ? (p.items as { media_id?: string }[]) : [];
+      if (!list.some((it) => it && it.media_id === item.id)) continue;
+      const items = list
+        .filter((it) => it && it.media_id !== item.id)
+        .map((it, i) => ({ ...it, order: i }));
+      const { error: upErr } = await supabase
+        .from("playlists")
+        .update({ items: items as unknown as never })
+        .eq("id", p.id);
+      if (!upErr) removedFrom++;
+    }
+    toast.success(
+      removedFrom
+        ? "Mídia excluída e retirada de " +
+            removedFrom +
+            (removedFrom === 1 ? " playlist" : " playlists")
+        : "Mídia excluída",
+    );
     load();
     if (onChanged) onChanged();
   }
@@ -385,7 +409,9 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
     });
   }, [media, search, filter]);
 
-  const activeUploads = queue.filter((q) => q.status === "uploading" || q.status === "queued").length;
+  const activeUploads = queue.filter(
+    (q) => q.status === "uploading" || q.status === "queued",
+  ).length;
 
   return (
     <div className="space-y-5">
@@ -409,7 +435,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="dur">Tempo padrão das imagens (segundos)</Label>
             <Input
@@ -465,7 +491,9 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
                     )}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{q.file.name}</p>
+                    <p className="cf-title text-sm font-semibold" title={q.file.name}>
+                      {q.file.name}
+                    </p>
                     <div className="mt-1 flex items-center gap-2">
                       <Progress value={q.status === "done" ? 100 : q.progress} className="h-1.5" />
                       <span className="shrink-0 text-[11px] font-bold text-muted-foreground">
@@ -518,7 +546,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="yt-url">Link do YouTube</Label>
             <Input
@@ -581,7 +609,7 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
               className="h-16 w-28 rounded-lg object-cover"
             />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{ytTitle.trim() || "Vídeo do YouTube"}</p>
+              <p className="cf-title text-sm font-bold">{ytTitle.trim() || "Vídeo do YouTube"}</p>
               <p className="truncate text-[11px] text-muted-foreground">ID {ytId}</p>
             </div>
           </div>
@@ -599,11 +627,13 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
           />
         </div>
         <div className="flex gap-1 rounded-xl bg-secondary p-1">
-          {([
-            ["all", "Todas"],
-            ["video", "Vídeos"],
-            ["image", "Imagens"],
-          ] as const).map(([value, label]) => (
+          {(
+            [
+              ["all", "Todas"],
+              ["video", "Vídeos"],
+              ["image", "Imagens"],
+            ] as const
+          ).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -658,7 +688,9 @@ export function MediaManager({ onChanged }: { onChanged?: () => void }) {
             </div>
 
             <div className="p-3.5">
-              <p className="truncate text-sm font-bold">{m.title}</p>
+              <p className="cf-title text-sm font-bold" title={m.title}>
+                {m.title}
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold">
                 <span className="rounded-md bg-secondary px-2 py-0.5 text-secondary-foreground">
                   {extOf(m.title)}

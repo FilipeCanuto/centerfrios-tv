@@ -10,7 +10,11 @@ import { BellRing, Megaphone, Plus, Trash2, Zap } from "lucide-react";
 const QUICK: { label: string; message: string; seconds: number }[] = [
   { label: "Sorteio", message: "🎉 Sorteio em 5 minutos! Venha participar.", seconds: 30 },
   { label: "Oferta relâmpago", message: "⚡ Oferta relâmpago no Açougue — só agora!", seconds: 45 },
-  { label: "Atendimento", message: "Atendimento preferencial disponível no balcão 2.", seconds: 20 },
+  {
+    label: "Atendimento",
+    message: "Atendimento preferencial disponível no balcão 2.",
+    seconds: 20,
+  },
 ];
 
 export function AlertsManager() {
@@ -46,7 +50,9 @@ export function AlertsManager() {
     const { error } = await supabase.from("tv_alerts").insert({
       message: clean,
       // tempo de tela + janela de entrega (as TVs consultam a cada ~25 s e exibem só o tempo de tela)
-      expires_at: new Date(Date.now() + Math.max(5, duration) * 1000 + DELIVERY_GRACE_MS).toISOString(),
+      expires_at: new Date(
+        Date.now() + Math.max(5, duration) * 1000 + DELIVERY_GRACE_MS,
+      ).toISOString(),
     });
     setBusy(false);
     if (error) {
@@ -99,7 +105,7 @@ export function AlertsManager() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_130px]">
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_130px]">
           <div className="space-y-1.5">
             <Label htmlFor="alert-msg">Mensagem</Label>
             <Input
@@ -134,11 +140,7 @@ export function AlertsManager() {
           >
             <Zap className="mr-1.5 h-4 w-4" /> Exibir agora nas TVs
           </Button>
-          <Button
-            onClick={saveTemplate}
-            variant="outline"
-            className="h-11 rounded-xl font-bold"
-          >
+          <Button onClick={saveTemplate} variant="outline" className="h-11 rounded-xl font-bold">
             <Plus className="mr-1.5 h-4 w-4" /> Salvar aviso
           </Button>
         </div>
@@ -179,7 +181,9 @@ export function AlertsManager() {
               <BellRing className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold">{t.message}</p>
+              <p className="cf-title text-sm font-bold" title={t.message}>
+                {t.message}
+              </p>
               <p className="text-xs text-muted-foreground">{t.duration_seconds} segundos na tela</p>
             </div>
             <Button

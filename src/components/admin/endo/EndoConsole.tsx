@@ -74,7 +74,7 @@ export function EndoConsole({
             <h3 className="text-base font-extrabold">Mesa de Controle</h3>
             {state ? (
               <>
-                <p className="truncate text-sm font-bold">{state.momentTitle || state.title}</p>
+                <p className="cf-title text-sm font-bold">{state.momentTitle || state.title}</p>
                 <p className="truncate text-[11px] text-muted-foreground">
                   {state.momentTitle ? state.title + " · " : ""}ID {state.videoId}
                 </p>

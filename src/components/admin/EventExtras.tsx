@@ -131,7 +131,7 @@ export function EventExtras() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Input
             placeholder="Nome do parceiro"
             value={name}
@@ -195,7 +195,7 @@ export function EventExtras() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_110px]">
+          <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
             <div className="space-y-1.5">
               <Label className="text-xs">Título</Label>
               <Input
@@ -236,7 +236,7 @@ export function EventExtras() {
               </p>
             </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <Input
               placeholder="Bem-vindo, Eng. Ricardo Alves!"
               value={welcome}

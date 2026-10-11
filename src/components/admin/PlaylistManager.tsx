@@ -40,17 +40,32 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { Plus, Trash2, ListVideo, Film, ImageIcon, GripVertical, Play, Clock } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ListVideo,
+  Film,
+  ImageIcon,
+  GripVertical,
+  Play,
+  Clock,
+  Search,
+  Eraser,
+  Youtube,
+} from "lucide-react";
 
 type PlaylistState = { id: string; name: string; items: PlaylistItem[] };
 
-export function PlaylistManager() {
+export function PlaylistManager({ active = true }: { active?: boolean } = {}) {
   const [playlists, setPlaylists] = useState<PlaylistState[]>([]);
   const [media, setMedia] = useState<MediaRow[]>([]);
   const [newName, setNewName] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "youtube" | "video" | "image">("all");
+  const [cleaning, setCleaning] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -70,9 +85,10 @@ export function PlaylistManager() {
     setSelected((cur) => cur || (parsed.length ? parsed[0].id : null));
   }
 
+  // recarrega sempre que a aba volta a ficar visível (ex.: acabou de enviar mídias na aba Mídias)
   useEffect(() => {
-    load();
-  }, []);
+    if (active) load();
+  }, [active]);
 
   const current = playlists.find((p) => p.id === selected) || null;
 
@@ -84,8 +100,60 @@ export function PlaylistManager() {
     return map;
   }, [media]);
 
+  // quantas vezes cada mídia já está na playlist aberta (selo "na playlist")
+  const inPlaylist = useMemo(() => {
+    const c: Record<string, number> = {};
+    (current?.items || []).forEach((it) => {
+      c[it.media_id] = (c[it.media_id] || 0) + 1;
+    });
+    return c;
+  }, [current]);
+
+  // galeria filtrada: busca por nome (sem acento) + tipo
+  const filteredMedia = useMemo(() => {
+    const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const q = norm(query.trim());
+    return media.filter(
+      (m) =>
+        (typeFilter === "all" || m.type === typeFilter) && (!q || norm(m.title || "").includes(q)),
+    );
+  }, [media, query, typeFilter]);
+
+  // itens que apontam para mídias que não existem mais (excluídas da galeria), em TODAS as playlists
+  const orphanTotal = useMemo(
+    () => playlists.reduce((acc, p) => acc + p.items.filter((it) => !byId[it.media_id]).length, 0),
+    [playlists, byId],
+  );
+
+  async function removeOrphans() {
+    if (!orphanTotal || cleaning) return;
+    setCleaning(true);
+    const dirty = playlists.filter((p) => p.items.some((it) => !byId[it.media_id]));
+    const results = await Promise.all(
+      dirty.map((p) => {
+        const items = p.items
+          .filter((it) => byId[it.media_id])
+          .map((it, i) => ({ ...it, order: i }));
+        return supabase
+          .from("playlists")
+          .update({ items: items as unknown as never })
+          .eq("id", p.id);
+      }),
+    );
+    setCleaning(false);
+    if (results.some((r) => r.error)) toast.error("Algumas playlists não puderam ser limpas");
+    else
+      toast.success(
+        orphanTotal +
+          (orphanTotal === 1 ? " mídia removida foi tirada" : " mídias removidas foram tiradas") +
+          " das playlists",
+      );
+    load();
+  }
+
   const youtubeCount = useMemo(
-    () => (current ? current.items.filter((it) => byId[it.media_id]?.type === "youtube").length : 0),
+    () =>
+      current ? current.items.filter((it) => byId[it.media_id]?.type === "youtube").length : 0,
     [current, byId],
   );
 
@@ -131,6 +199,8 @@ export function PlaylistManager() {
 
   function addMedia(mediaId: string) {
     if (!current) return;
+    const m = byId[mediaId];
+    toast.success("Adicionado: " + (m?.title || "mídia"), { duration: 1500 });
     persist(
       current.items.concat([
         { media_id: mediaId, order: current.items.length, custom_duration: null },
@@ -227,16 +297,19 @@ export function PlaylistManager() {
             <button
               key={p.id}
               type="button"
+              title={p.name}
               onClick={() => setSelected(p.id)}
               className={
-                "rounded-full border px-4 py-1.5 text-sm font-bold transition-colors " +
+                "inline-flex max-w-full items-center rounded-full border px-4 py-1.5 text-sm font-bold transition-colors " +
                 (p.id === selected
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-primary")
               }
             >
-              {p.name}
-              <span className="ml-2 text-xs font-semibold opacity-70">{p.items.length}</span>
+              <span className="min-w-0 max-w-[16rem] truncate">{p.name}</span>
+              <span className="ml-2 shrink-0 text-xs font-semibold opacity-70">
+                {p.items.length}
+              </span>
             </button>
           ))}
         </div>
@@ -244,11 +317,34 @@ export function PlaylistManager() {
         <p className="px-1 text-sm text-muted-foreground">Nenhuma playlist criada.</p>
       )}
 
+      {orphanTotal > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-3">
+          <p className="min-w-0 text-sm font-semibold">
+            {orphanTotal === 1
+              ? "1 item das playlists aponta para uma mídia que foi excluída da galeria."
+              : orphanTotal +
+                " itens das playlists apontam para mídias que foram excluídas da galeria."}
+          </p>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={cleaning}
+            onClick={removeOrphans}
+            className="shrink-0 rounded-xl font-bold"
+          >
+            <Eraser className="mr-1.5 h-4 w-4" />
+            {cleaning ? "Removendo…" : "Remover todas as mídias removidas"}
+          </Button>
+        </div>
+      ) : null}
+
       {current ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="cf-card p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <section className="cf-card min-w-0 p-5">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-              <h3 className="truncate text-base font-extrabold">{current.name}</h3>
+              <h3 className="cf-title text-base font-extrabold" title={current.name}>
+                {current.name}
+              </h3>
               <div className="flex shrink-0 gap-1">
                 <Button
                   size="sm"
@@ -270,11 +366,14 @@ export function PlaylistManager() {
               </div>
             </div>
 
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-extrabold text-accent-foreground">
+            <p className="mt-2 inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-extrabold text-accent-foreground">
               <Clock className="h-3.5 w-3.5" />
               Duração total: {formatDuration(totalSeconds)}
               {youtubeCount > 0
-                ? " + " + youtubeCount + (youtubeCount === 1 ? " vídeo do YouTube" : " vídeos do YouTube") + " (tocam até o fim)"
+                ? " + " +
+                  youtubeCount +
+                  (youtubeCount === 1 ? " vídeo do YouTube" : " vídeos do YouTube") +
+                  " (tocam até o fim)"
                 : ""}
             </p>
 
@@ -283,7 +382,8 @@ export function PlaylistManager() {
                 items={current.items.map((it, i) => it.media_id + "#" + i)}
                 strategy={verticalListSortingStrategy}
               >
-                <ul className="mt-4 space-y-2">
+                {/* rolagem própria: a lista não empurra a galeria para baixo em telas grandes */}
+                <ul className="mt-4 space-y-2 lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1">
                   {current.items.map((it, i) => (
                     <SortableRow
                       key={it.media_id + "#" + i}
@@ -307,53 +407,97 @@ export function PlaylistManager() {
             ) : null}
           </section>
 
-          <section className="cf-card p-5">
-            <h3 className="text-base font-extrabold">Galeria de mídias</h3>
-            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-              {media.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex items-center gap-2 rounded-xl border border-border p-2"
+          <section className="cf-card min-w-0 p-5 lg:sticky lg:top-4 lg:self-start">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-base font-extrabold">Galeria de mídias</h3>
+              <span className="text-xs text-muted-foreground">
+                {filteredMedia.length} de {media.length}
+              </span>
+            </div>
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar mídia pelo nome…"
+                className="h-10 rounded-xl pl-9"
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["all", "Todas"],
+                  ["youtube", "YouTube"],
+                  ["video", "Vídeos"],
+                  ["image", "Imagens"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setTypeFilter(k)}
+                  className={
+                    "rounded-full border px-3 py-1 text-xs font-bold transition-colors " +
+                    (typeFilter === k
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:text-primary")
+                  }
                 >
-                  <span className="h-10 w-14 shrink-0 overflow-hidden rounded-lg bg-foreground/90">
-                    {m.type === "youtube" ? (
-                      <img
-                        src={"https://i.ytimg.com/vi/" + (parseYoutubeId(m.url) || "") + "/mqdefault.jpg"}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : m.type === "image" ? (
-                      <img src={m.url} alt="" className="h-full w-full object-contain" />
-                    ) : (
-                      <video src={m.url} muted className="h-full w-full object-contain" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{m.title}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                      {m.type === "video" ? (
-                        <Film className="h-3 w-3" />
-                      ) : (
-                        <ImageIcon className="h-3 w-3" />
-                      )}
-                      {m.type === "youtube"
-                        ? "YouTube"
-                        : m.resolution || (m.type === "video" ? "Vídeo" : "Imagem")}
-                    </p>
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    aria-label="Adicionar à playlist"
-                    className="h-8 w-8 shrink-0 rounded-lg"
-                    onClick={() => addMedia(m.id)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </li>
+                  {label}
+                </button>
               ))}
+            </div>
+            <ul className="mt-3 grid gap-2 lg:max-h-[62vh] lg:overflow-y-auto lg:pr-1">
+              {filteredMedia.map((m) => {
+                const count = inPlaylist[m.id] || 0;
+                return (
+                  <li
+                    key={m.id}
+                    className={
+                      "flex min-w-0 items-center gap-2 rounded-xl border p-2 " +
+                      (count ? "border-primary/40 bg-secondary/40" : "border-border")
+                    }
+                  >
+                    <MediaThumb media={m} />
+                    <div className="min-w-0 flex-1">
+                      <p className="cf-title text-sm font-semibold leading-snug" title={m.title}>
+                        {m.title}
+                      </p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                        {m.type === "youtube" ? (
+                          <Youtube className="h-3 w-3" />
+                        ) : m.type === "video" ? (
+                          <Film className="h-3 w-3" />
+                        ) : (
+                          <ImageIcon className="h-3 w-3" />
+                        )}
+                        {m.type === "youtube"
+                          ? "YouTube"
+                          : m.resolution || (m.type === "video" ? "Vídeo" : "Imagem")}
+                        {count ? (
+                          <span className="ml-1 rounded-full bg-primary px-1.5 py-px text-[10px] font-extrabold text-primary-foreground">
+                            na playlist{count > 1 ? " ×" + count : ""}
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      aria-label="Adicionar à playlist"
+                      title="Adicionar ao fim da playlist"
+                      className="h-9 w-9 shrink-0 rounded-lg"
+                      onClick={() => addMedia(m.id)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </li>
+                );
+              })}
               {media.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Envie mídias primeiro.</p>
+              ) : filteredMedia.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma mídia encontrada.</p>
               ) : null}
             </ul>
           </section>
@@ -435,16 +579,14 @@ function SortableRow({
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary text-xs font-extrabold text-primary-foreground">
         {index + 1}
       </span>
-      {media ? (
-        <span className="h-9 w-14 shrink-0 overflow-hidden rounded-lg bg-foreground/90">
-          {media.type === "image" ? (
-            <img src={media.url} alt="" className="h-full w-full object-contain" />
-          ) : (
-            <video src={media.url} muted className="h-full w-full object-contain" />
-          )}
-        </span>
-      ) : null}
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+      {media ? <MediaThumb media={media} small /> : null}
+      <span
+        className={
+          "cf-title flex-1 basis-40 text-sm font-semibold leading-snug " +
+          (media ? "" : "italic text-destructive")
+        }
+        title={media ? media.title : "Mídia removida da galeria"}
+      >
         {media ? media.title : "Mídia removida"}
       </span>
 
@@ -498,6 +640,33 @@ function SortableRow({
   );
 }
 
+// Miniatura: capa do YouTube (nunca tenta abrir o link do YouTube como vídeo), imagem ou vídeo.
+function MediaThumb({ media, small }: { media: MediaRow; small?: boolean }) {
+  const ytId = media.type === "youtube" ? parseYoutubeId(media.url) : null;
+  return (
+    <span
+      className={
+        (small ? "h-9 w-14" : "h-10 w-16") + " shrink-0 overflow-hidden rounded-lg bg-foreground/90"
+      }
+    >
+      {media.type === "youtube" ? (
+        ytId ? (
+          <img
+            src={"https://i.ytimg.com/vi/" + ytId + "/mqdefault.jpg"}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : null
+      ) : media.type === "image" ? (
+        <img src={media.url} alt="" loading="lazy" className="h-full w-full object-contain" />
+      ) : (
+        <video src={media.url} muted preload="metadata" className="h-full w-full object-contain" />
+      )}
+    </span>
+  );
+}
+
 const WEEK = ["D", "S", "T", "Q", "Q", "S", "S"];
 
 function SchedEditor({
@@ -522,7 +691,9 @@ function SchedEditor({
             type="button"
             aria-label={"Dia " + d}
             onClick={() =>
-              onSched({ days: days.includes(d) ? days.filter((x) => x !== d) : days.concat([d]).sort() })
+              onSched({
+                days: days.includes(d) ? days.filter((x) => x !== d) : days.concat([d]).sort(),
+              })
             }
             className={
               "h-7 w-7 rounded-md text-[11px] font-bold " +
@@ -611,8 +782,7 @@ function PlaylistPreview({
   useEffect(() => {
     if (!open || !currentEntry || !currentEntry.media) return;
     if (currentEntry.media.type === "video") return;
-    const secs =
-      currentEntry.item.custom_duration || currentEntry.media.duration || 10;
+    const secs = currentEntry.item.custom_duration || currentEntry.media.duration || 10;
     const t = setTimeout(() => setI((v) => v + 1), Math.max(1, secs) * 1000);
     return () => clearTimeout(t);
   }, [open, i, currentEntry]);

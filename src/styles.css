@@ -190,6 +190,22 @@
   box-shadow:
     0 1px 2px color-mix(in oklab, var(--color-brand-deep) 6%, transparent),
     0 8px 24px -12px color-mix(in oklab, var(--color-brand-deep) 22%, transparent);
+  /* cartão dentro de grid/flex pode encolher: um título enorme não alarga a coluna */
+  min-width: 0;
+}
+
+/* Título de mídia/playlist: quebra em até 2 linhas e corta com "…".
+   overflow-wrap:anywhere quebra até "palavras" gigantes sem espaço (nomes de arquivo como
+   SnapInsta.to_AQPFVcB...mp4), que antes empurravam o cartão para fora da tela. */
+@utility cf-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 
 @utility cf-header {
