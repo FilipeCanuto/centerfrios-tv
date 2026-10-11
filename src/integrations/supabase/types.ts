@@ -352,7 +352,6 @@ export type Database = {
           ticker_position: string
           ticker_text: string | null
           volume: number
-          vignettes_enabled: boolean
           welcome_message: string | null
           welcome_until: string | null
         }
@@ -396,7 +395,6 @@ export type Database = {
           ticker_position?: string
           ticker_text?: string | null
           volume?: number
-          vignettes_enabled?: boolean
           welcome_message?: string | null
           welcome_until?: string | null
         }
@@ -440,7 +438,6 @@ export type Database = {
           ticker_position?: string
           ticker_text?: string | null
           volume?: number
-          vignettes_enabled?: boolean
           welcome_message?: string | null
           welcome_until?: string | null
         }
@@ -472,39 +469,6 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
-        }
-        Relationships: []
-      }
-      vignettes: {
-        Row: {
-          active: boolean
-          created_at: string
-          id: string
-          order_index: number
-          orientation: string
-          title: string | null
-          video_id: string
-          youtube_url: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          order_index?: number
-          orientation: string
-          title?: string | null
-          video_id: string
-          youtube_url: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          id?: string
-          order_index?: number
-          orientation?: string
-          title?: string | null
-          video_id?: string
-          youtube_url?: string
         }
         Relationships: []
       }
