@@ -375,6 +375,7 @@ export type Database = {
           sponsors_enabled: boolean
           ticker_position: string
           ticker_text: string | null
+          vignette_playlist_id: string | null
           vignettes_enabled: boolean
           volume: number
           welcome_message: string | null
@@ -419,6 +420,7 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
+          vignette_playlist_id?: string | null
           vignettes_enabled?: boolean
           volume?: number
           welcome_message?: string | null
@@ -463,6 +465,7 @@ export type Database = {
           sponsors_enabled?: boolean
           ticker_position?: string
           ticker_text?: string | null
+          vignette_playlist_id?: string | null
           vignettes_enabled?: boolean
           volume?: number
           welcome_message?: string | null
@@ -474,6 +477,13 @@ export type Database = {
             columns: ["playlist_id"]
             isOneToOne: false
             referencedRelation: "playlists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tvs_vignette_playlist_id_fkey"
+            columns: ["vignette_playlist_id"]
+            isOneToOne: false
+            referencedRelation: "vignette_playlists"
             referencedColumns: ["id"]
           },
         ]
@@ -499,6 +509,27 @@ export type Database = {
         }
         Relationships: []
       }
+      vignette_playlists: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          orientation: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          orientation?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          orientation?: string
+        }
+        Relationships: []
+      }
       vignettes: {
         Row: {
           active: boolean
@@ -506,6 +537,7 @@ export type Database = {
           id: string
           order_index: number
           orientation: string
+          playlist_id: string | null
           title: string | null
           video_id: string
           youtube_url: string
@@ -516,6 +548,7 @@ export type Database = {
           id?: string
           order_index?: number
           orientation: string
+          playlist_id?: string | null
           title?: string | null
           video_id: string
           youtube_url: string
@@ -526,11 +559,20 @@ export type Database = {
           id?: string
           order_index?: number
           orientation?: string
+          playlist_id?: string | null
           title?: string | null
           video_id?: string
           youtube_url?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vignettes_playlist_id_fkey"
+            columns: ["playlist_id"]
+            isOneToOne: false
+            referencedRelation: "vignette_playlists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
