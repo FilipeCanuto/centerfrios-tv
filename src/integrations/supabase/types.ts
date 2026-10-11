@@ -352,7 +352,6 @@ export type Database = {
           ticker_position: string
           ticker_text: string | null
           vignettes_enabled: boolean
-          vignette_playlist_id: string | null
           volume: number
           welcome_message: string | null
           welcome_until: string | null
@@ -397,7 +396,6 @@ export type Database = {
           ticker_position?: string
           ticker_text?: string | null
           vignettes_enabled?: boolean
-          vignette_playlist_id?: string | null
           volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
@@ -442,7 +440,6 @@ export type Database = {
           ticker_position?: string
           ticker_text?: string | null
           vignettes_enabled?: boolean
-          vignette_playlist_id?: string | null
           volume?: number
           welcome_message?: string | null
           welcome_until?: string | null
@@ -478,27 +475,6 @@ export type Database = {
         }
         Relationships: []
       }
-      vignette_playlists: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          orientation: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          orientation?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          name?: string
-          orientation?: string
-        }
-        Relationships: []
-      }
       vignettes: {
         Row: {
           active: boolean
@@ -506,7 +482,6 @@ export type Database = {
           id: string
           order_index: number
           orientation: string
-          playlist_id: string | null
           title: string | null
           video_id: string
           youtube_url: string
@@ -517,7 +492,6 @@ export type Database = {
           id?: string
           order_index?: number
           orientation: string
-          playlist_id?: string | null
           title?: string | null
           video_id: string
           youtube_url: string
@@ -528,7 +502,6 @@ export type Database = {
           id?: string
           order_index?: number
           orientation?: string
-          playlist_id?: string | null
           title?: string | null
           video_id?: string
           youtube_url?: string
