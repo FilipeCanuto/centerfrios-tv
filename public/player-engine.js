@@ -337,6 +337,7 @@
       var perf = window.performance;
       if (perf && perf.memory) mem = Math.round(perf.memory.usedJSHeapSize / 1048576) + " MB";
     } catch (e) {}
+    if (endoActive && endoStatus) mem = (mem ? mem + " | " : "") + "Endomarketing: " + endoStatus;
     req("POST", "/rest/v1/rpc/tv_heartbeat", {
       _id: tvId,
       _resolution: window.screen.width + "x" + window.screen.height,
@@ -1054,6 +1055,7 @@
 
   function endoExit() {
     endoActive = false;
+    endoStatus = "";
     if (endoTimer) { clearInterval(endoTimer); endoTimer = null; }
     if (endoTitleTimer) { clearTimeout(endoTitleTimer); endoTitleTimer = null; }
     if (endoYt.player) { try { endoYt.player.destroy(); } catch (e) {} }
@@ -1077,46 +1079,90 @@
       });
   }
 
-  function endoCreate(videoId) {
+  /* Formas de criar o player, tentadas em sequência se o vídeo não começar a tocar:
+     0 = idêntica aos vídeos do YouTube da playlist (que tocam no Silk): autoplay, mudo via API;
+     1 = parâmetro mute=1 no próprio player (autoplay mudo "de nascença");
+     2 = domínio youtube-nocookie.com.
+     Dentro de cada forma, antes de trocar, ainda tenta loadVideoById (força carregar e tocar). */
+  var ENDO_VARIANTS = 3;
+  function endoCreate(videoId, variant) {
+    variant = variant || 0;
     if (endoYt.player) { try { endoYt.player.destroy(); } catch (e) {} }
     $("endo-video").innerHTML = '<div id="endo-holder"></div>';
-    endoYt = { player: null, ready: false, videoId: videoId };
+    endoYt = { player: null, ready: false, videoId: videoId, variant: variant,
+      createdAt: new Date().getTime(), started: false, nudged: false };
+    endoSetStatus("carregando" + (variant ? " (tentativa " + (variant + 1) + ")" : ""));
     whenYtReady(function () {
-      if (!endoActive || endoYt.videoId !== videoId) return;
-      try {
-        endoYt.player = new window.YT.Player("endo-holder", {
-          videoId: videoId, width: "100%", height: "100%",
-          playerVars: {
-            /* nasce SEMPRE mudo: autoplay sem som é permitido em qualquer navegador (Silk incluso).
-               O som é ligado em endoSync depois que o vídeo já está tocando. */
-            autoplay: endoState && endoState.playing ? 1 : 0, mute: 1, controls: 0, modestbranding: 1, rel: 0,
-            playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3,
-            origin: window.location.protocol + "//" + window.location.host,
-            widget_referrer: window.location.href
+      if (!endoActive || endoYt.videoId !== videoId || endoYt.variant !== variant) return;
+      var vars = {
+        autoplay: endoState && endoState.playing ? 1 : 0, controls: 0, modestbranding: 1, rel: 0,
+        playsinline: 1, fs: 0, disablekb: 1, iv_load_policy: 3,
+        origin: window.location.protocol + "//" + window.location.host,
+        widget_referrer: window.location.href
+      };
+      if (variant === 1) vars.mute = 1;
+      var opts = {
+        videoId: videoId, width: "100%", height: "100%", playerVars: vars,
+        events: {
+          onReady: function () {
+            endoYt.ready = true;
+            endoApplied.volume = -1;
+            try { endoYt.player.mute(); } catch (e) {}
+            endoApplied.muted = true;            /* começa mudo; endoSync liga o som quando estiver tocando */
+            endoStuck = 0;
+            endoSync();
           },
-          events: {
-            onReady: function () {
-              endoYt.ready = true;
-              endoApplied.volume = -1;
-              try { endoYt.player.mute(); } catch (e) {}
-              endoApplied.muted = true;            /* começa mudo; endoSync liga o som quando estiver tocando */
-              endoStuck = 0;
-              endoSync();
-            },
-            onStateChange: function (e) {
-              var S = window.YT && window.YT.PlayerState;
-              if (!S || !endoActive) return;
-              if (e.data === S.ENDED) endoOnEnded();
-              else if (e.data === S.PLAYING) { endoEnded = false; showEl(endoEndEl, false); endoSync(); /* liga o som já */ }
-              else if (e.data === S.PAUSED && endoState && endoState.playing && !endoEnded) {
-                setTimeout(endoSync, 300);   /* pausou sem ninguém pedir (ex.: Silk barrou o som): recupera já */
-              }
-            },
-            onError: function () { diag("endo: video indisponivel"); endoEnded = true; showEl(endoEndEl, true); }
+          onStateChange: function (e) {
+            var S = window.YT && window.YT.PlayerState;
+            if (!S || !endoActive) return;
+            if (e.data === S.ENDED) endoOnEnded();
+            else if (e.data === S.PLAYING) {
+              endoYt.started = true; endoEnded = false; showEl(endoEndEl, false);
+              endoSync();                        /* liga o som já */
+            } else if (e.data === S.PAUSED && endoState && endoState.playing && !endoEnded) {
+              setTimeout(endoSync, 300);         /* pausou sem ninguém pedir (ex.: Silk barrou o som): recupera já */
+            }
+          },
+          onError: function (e) {
+            endoSetStatus("erro do YouTube " + (e && e.data));
+            diag("endo: video indisponivel"); endoEnded = true; showEl(endoEndEl, true);
           }
-        });
-      } catch (e) { endoYt.player = null; }
+        }
+      };
+      if (variant === 2) opts.host = "https://www.youtube-nocookie.com";
+      try { endoYt.player = new window.YT.Player("endo-holder", opts); } catch (e) { endoYt.player = null; }
     });
+  }
+
+  /* Vídeo que devia tocar e ainda não começou: empurra (loadVideoById) e depois troca de forma. */
+  function endoStartWatch() {
+    if (!endoActive || !endoState || !endoState.playing || endoEnded || endoYt.started) return;
+    var age = new Date().getTime() - (endoYt.createdAt || 0);
+    if (!endoYt.nudged && age > 5000 && endoYt.player && endoYt.ready) {
+      endoYt.nudged = true;
+      endoSetStatus("empurrando o play");
+      try { endoYt.player.mute(); endoYt.player.loadVideoById({ videoId: endoYt.videoId, startSeconds: 0 }); } catch (e) {}
+      return;
+    }
+    if (age > 11000) {
+      if (endoYt.variant + 1 < ENDO_VARIANTS) endoCreate(endoYt.videoId, endoYt.variant + 1);
+      else endoSetStatus("nao iniciou - aperte OK no controle remoto");
+    }
+  }
+
+  /* Situação do Endomarketing enviada ao painel junto com o sinal de vida (cartão da TV). */
+  var endoStatus = "", endoStatusSentAt = 0, endoStatusTimer = null;
+  function endoSendStatus() {
+    endoStatusTimer = null; endoStatusSentAt = new Date().getTime();
+    try { heartbeat(); } catch (e) {}
+  }
+  function endoSetStatus(st) {
+    if (st === endoStatus) return;
+    endoStatus = st;
+    /* no máximo 1 envio a cada 5 s; mudança dentro da janela vai assim que ela termina */
+    var wait = 5000 - (new Date().getTime() - endoStatusSentAt);
+    if (wait <= 0) endoSendStatus();
+    else if (!endoStatusTimer) endoStatusTimer = setTimeout(endoSendStatus, wait);
   }
 
   /* Qualquer tecla do controle remoto é um "gesto do usuário": libera o som bloqueado na hora. */
@@ -1201,6 +1247,9 @@
     if (st.playing && !endoEnded) {
       if (s === S.PLAYING) {
         endoStuck = 0;
+        endoYt.started = true;
+        endoSetStatus(!wantSound ? "tocando (mudo pelo painel)" : endoAudioBlocked
+          ? "tocando SEM SOM - o navegador barrou o som: aperte OK no controle" : "tocando com som");
         /* já está tocando: agora é seguro ligar o som */
         if (wantSound && !endoAudioBlocked && endoApplied.muted !== false) {
           try { p.unMute(); p.setVolume(vol); } catch (e) {}
@@ -1232,6 +1281,7 @@
     /* ENDED que o evento não avisou (Silk): leitura direta. Logo após um comando o estado
        ainda pode ser o antigo (ENDED): não conclui "terminou" nessa mesma leitura. */
     if (s === S.ENDED && !endoEnded && !newNonce) endoOnEnded();
+    endoStartWatch();
   }
 
   /* ---------------- modo ao vivo ---------------- */

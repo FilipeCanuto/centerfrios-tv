@@ -87,6 +87,19 @@ export function EndoTargets({
                     </span>
                   ) : null}
                 </span>
+                {/* o que a TV relata (enviado junto com o sinal de vida) */}
+                {tv.is_endomarketing_active && /Endomarketing: /.test(tv.memory_usage || "") ? (
+                  <span
+                    className={
+                      "mt-1 block text-[11px] font-bold " +
+                      (/aperte OK|SEM SOM|erro/i.test(tv.memory_usage || "")
+                        ? "text-destructive"
+                        : "text-primary")
+                    }
+                  >
+                    TV: {(tv.memory_usage || "").split("Endomarketing: ")[1]}
+                  </span>
+                ) : null}
               </span>
             </label>
           );
