@@ -29,6 +29,13 @@
       "when": 1791756399146,
       "tag": "0003_vignette_playlists",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791979146393,
+      "tag": "0004_restrict_media_playlists_settings_reads",
+      "breakpoints": true
     }
   ]
 }
