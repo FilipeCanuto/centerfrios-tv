@@ -1367,7 +1367,8 @@
   function ytMarkOk(v) { ytFails[v] = 0; ytBadUntil[v] = 0; }
   function attachSched(list, playlistId, cb) {
     if (!playlistId || !list.length) { cb(); return; }
-    req("GET", "/rest/v1/playlists?id=eq." + playlistId + "&select=items", null, function (err, pls) {
+    req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (err, pls) {
+      pls = pls ? [{ items: pls }] : null;
       try {
         if (!err && pls && pls.length && pls[0].items && pls[0].items.length) {
           var src = pls[0].items.slice(0);
@@ -1535,7 +1536,8 @@
       }
       if (resolved.length) { finish(); return; }
       // fallback: playlists.items (JSONB) + media
-      req("GET", "/rest/v1/playlists?id=eq." + playlistId + "&select=items", null, function (e2, pls) {
+      req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (e2, pls) {
+      pls = pls ? [{ items: pls }] : null;
         var parsed = [];
         if (!e2 && pls && pls.length && pls[0].items && pls[0].items.length) {
           parsed = pls[0].items.slice(0);

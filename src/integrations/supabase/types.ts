@@ -592,6 +592,7 @@ export type Database = {
           url: string
         }[]
       }
+      get_tv_playlist_raw: { Args: { p_playlist_id: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
