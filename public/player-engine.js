@@ -1368,7 +1368,7 @@
   function attachSched(list, playlistId, cb) {
     if (!playlistId || !list.length) { cb(); return; }
     req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (err, pls) {
-      pls = (pls && !(pls instanceof Array)) ? [{ items: pls }] : (pls instanceof Array ? pls : null);
+      pls = pls ? [{ items: pls }] : null;
       try {
         if (!err && pls && pls.length && pls[0].items && pls[0].items.length) {
           var src = pls[0].items.slice(0);
@@ -1537,7 +1537,7 @@
       if (resolved.length) { finish(); return; }
       // fallback: playlists.items (JSONB) + media
       req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (e2, pls) {
-      pls = (pls && !(pls instanceof Array)) ? [{ items: pls }] : (pls instanceof Array ? pls : null);
+      pls = pls ? [{ items: pls }] : null;
         var parsed = [];
         if (!e2 && pls && pls.length && pls[0].items && pls[0].items.length) {
           parsed = pls[0].items.slice(0);
