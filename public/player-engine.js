@@ -1364,7 +1364,25 @@
     ytFails[v] = (ytFails[v] || 0) + 1;
     if (ytFails[v] >= 2) { ytBadUntil[v] = new Date().getTime() + YT_BAD_MS; ytFails[v] = 0; }
   }
-  function ytMarkOk(v) { ytFails[v] = 0; ytBadUntil[v] = 0; }
+  function ytMarkOk(v) { ytFails[v] = 0; ytBadUntil[v] = 0; ytStreak = 0; }
+  /* Blindagem: falhas seguidas de vídeos DIFERENTES indicam o player do YouTube travado
+     neste aparelho (não o vídeo). 3 seguidas: recria os dois iframes do zero.
+     6 seguidas: recarrega a página (no máximo 1x a cada 10 min). */
+  var ytStreak = 0;
+  function ytStreakFail() {
+    ytStreak++;
+    if (ytStreak === 3) {
+      try { ytDestroy(ytA); } catch (e) {}
+      try { ytDestroy(ytB); } catch (e) {}
+    } else if (ytStreak >= 6) {
+      var last = 0, now = new Date().getTime();
+      try { last = parseInt(localStorage.getItem("cf_yt_reload") || "0", 10) || 0; } catch (e) {}
+      if (now - last > 10 * 60 * 1000) {
+        try { localStorage.setItem("cf_yt_reload", String(now)); } catch (e) {}
+        window.location.reload();
+      } else { ytStreak = 2; }
+    }
+  }
   function attachSched(list, playlistId, cb) {
     if (!playlistId || !list.length) { cb(); return; }
     req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (err, pls) {
@@ -1885,7 +1903,7 @@
     var vid = ytId(item.url);
     if (!vid) { scheduleFail(); return; }
     var slot = idleYt, other = activeYt;
-    var started = false, shown = false, finished = false, lastT = -1, still = 0, hardFromDuration = false;
+    var startedAt = 0, started = false, shown = false, finished = false, lastT = -1, still = 0, hardFromDuration = false;
 
     function st() { return window.YT && window.YT.PlayerState; }
 
@@ -1894,6 +1912,7 @@
       finished = true;
       clearTimer("ytpoll");
       ytMarkFail(vid);
+      ytStreakFail();
       diag(why);
       if (!shown) ytDestroy(slot);          /* nunca apareceu: descarta o iframe com erro */
       advance();
@@ -1911,6 +1930,7 @@
       shown = true;
       clearTimer("canplay");
       ytMarkOk(vid);
+      ytApplyAudio(slot);
       diag("");
       crossfade(slot.el, [other.el, activeVideo, idleVideo, activeImg, idleImg]);
       activeYt = slot; idleYt = other;
@@ -1935,7 +1955,10 @@
       if (s === S.ENDED) { if (shown) end(); else fail("youtube nao iniciou"); return; }
       if (!shown) {
         if (s === S.PLAYING) reveal();
-        else if (s === S.PAUSED || s === S.CUED || s === -1) { try { slot.player.playVideo(); } catch (e) {} }
+        else if (s === S.PAUSED || s === S.CUED || s === -1) {
+          if (new Date().getTime() - startedAt > 6000) { try { slot.player.mute(); } catch (e) {} }
+          try { slot.player.playVideo(); } catch (e) {}
+        }
         return;
       }
       /* duração só conhecida depois (ex.: após um anúncio): ajusta o watchdog ao tempo real */
@@ -1962,8 +1985,11 @@
     function go() {
       if (my !== token || started || !slot.player) return;
       started = true;
+      startedAt = new Date().getTime();
+      /* autoplay com som é bloqueado em alguns navegadores de TV: inicia SEMPRE mudo;
+         o som configurado é aplicado assim que o vídeo começa a tocar (reveal) */
+      try { slot.player.mute(); } catch (e) {}
       try { slot.player.playVideo(); } catch (e) {}
-      ytApplyAudio(slot);
       clearTimer("ytpoll");
       timers.ytpoll = setInterval(check, 1000);
     }
