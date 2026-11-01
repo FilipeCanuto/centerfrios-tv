@@ -1553,32 +1553,29 @@
         }
       }
       if (resolved.length) { finish(); return; }
-      // fallback: playlists.items (JSONB) + media
-      req("POST", "/rest/v1/rpc/get_tv_playlist_raw", { p_playlist_id: playlistId }, function (e2, pls) {
-      pls = pls ? [{ items: pls }] : null;
-        var parsed = [];
-        if (!e2 && pls && pls.length && pls[0].items && pls[0].items.length) {
-          parsed = pls[0].items.slice(0);
-          parsed.sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-        }
-        if (!parsed.length) { finish(); return; }
-        var ids = [];
-        for (var k = 0; k < parsed.length; k++) if (parsed[k].media_id) ids.push(parsed[k].media_id);
-        req("GET", "/rest/v1/media?select=id,title,url,type,duration,qr_url&id=in.(" + ids.join(",") + ")",
-          null, function (e3, medias) {
-            var byId = {};
-            if (!e3 && medias) for (var m = 0; m < medias.length; m++) byId[medias[m].id] = medias[m];
-            for (var p = 0; p < parsed.length; p++) {
-              var med = byId[parsed[p].media_id];
-              if (!med || !med.url) continue;
+      if (!err) { finish(); return; }      /* playlist realmente vazia: mostra o aviso */
+      /* falha de rede/servidor: tenta de novo em 4 s pelo mesmo caminho protegido
+         (a leitura direta das mídias é bloqueada para as TVs por segurança) */
+      setTimeout(function () {
+        req("POST", "/rest/v1/rpc/get_tv_playlist_items", { p_playlist_id: playlistId }, function (e2, rows2) {
+          if (!e2 && rows2) {
+            for (var j = 0; j < rows2.length; j++) {
+              var r2 = rows2[j];
+              if (!r2 || !r2.url) continue;
               resolved.push({
-                media_id: med.id, url: med.url, type: med.type, title: med.title, qr_url: med.qr_url,
-                duration: parsed[p].custom_duration || med.duration || 10
+                media_id: r2.media_id, url: r2.url, type: r2.type,
+                title: r2.title, qr_url: r2.qr_url, duration: r2.duration || 10
               });
             }
             finish();
-          });
-      });
+            return;
+          }
+          /* ainda sem resposta: continua com a última playlist salva no aparelho,
+             sem trocar a tela; a próxima conferência periódica tenta de novo */
+          if (items.length) { if (!playing && !endoActive) startLoop(); return; }
+          finish();
+        });
+      }, 4000);
     });
   }
 
