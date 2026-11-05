@@ -46,16 +46,16 @@
 
   /* Intervalos conservadores para economizar a nuvem (Supabase): ~80% menos consultas.
      Comandos/playlist chegam em até 20 s; avisos em até 25 s; destaque de foto em até 30 s. */
-  var POLL_MS = 20000;       // estado da TV + comando remoto
-  var HEARTBEAT_MS = 60000;  // fire-and-forget, NUNCA lido de volta (painel: online se < 150 s)
+  var POLL_MS = 60000;       // estado da TV + comando remoto
+  var HEARTBEAT_MS = 120000; // fire-and-forget, NUNCA lido de volta (painel: online se < 300 s)
   var LIVE_MS = 1000;        // só roda durante transmissão ao vivo
-  var ALERT_MS = 25000;
+  var ALERT_MS = 90000;
   var SPOT_MS = 30000;       // só consulta com modo evento ligado
   var SPONSOR_MS = 60000;    // só consulta com patrocinadores ligados
   /* Janela de entrega: o painel deixa aviso/destaque disponível por +35 s além do tempo de tela,
      para a TV que consulta a cada 25-30 s sempre recebê-lo. A TV exibe pelo tempo de tela
      contado a partir de quando o recebeu (nunca os 35 s extras). Igual no painel e no player React. */
-  var DELIVERY_GRACE_MS = 35000;
+  var DELIVERY_GRACE_MS = 100000;
   var SPOT_SHOW_MS = 10000;
   var CANPLAY_TIMEOUT = 6000;
   var STALL_MS = 6000;

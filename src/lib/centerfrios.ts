@@ -11,7 +11,7 @@ export const LOGO_URL = "/logo.png";
 // Janela de entrega de avisos/destaques: as TVs consultam a cada 25-30 s (economia de nuvem),
 // então o painel mantém aviso/destaque disponível por +35 s além do tempo de tela. A TV exibe
 // só o tempo de tela, contado de quando recebeu. Mesmo valor em public/player-engine.js.
-export const DELIVERY_GRACE_MS = 35000;
+export const DELIVERY_GRACE_MS = 100000;
 
 export type MediaRow = {
   id: string;
@@ -278,8 +278,8 @@ export function parsePlaylistItems(items: unknown): PlaylistItem[] {
 
 export function isOnline(lastPing: string | null): boolean {
   if (!lastPing) return false;
-  // TVs mandam sinal a cada 60 s: 150 s tolera 1 sinal perdido sem acusar "offline" à toa
-  return Date.now() - new Date(lastPing).getTime() < 150000;
+  // TVs mandam sinal a cada 120 s: 300 s tolera 1 sinal perdido sem acusar "offline" à toa
+  return Date.now() - new Date(lastPing).getTime() < 300000;
 }
 
 const YOUTUBE_ID_RE =
