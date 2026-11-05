@@ -152,6 +152,7 @@ export function TvPlayer() {
   const [buffering, setBuffering] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
+  const [rtHealthy, setRtHealthy] = useState(false);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
