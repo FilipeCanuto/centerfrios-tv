@@ -40,7 +40,8 @@ type Layer = { key: string; item: ResolvedItem; src: string; revoke: boolean };
 
 const MANIFEST_KEY = "playlist";
 // Intervalos conservadores (economia de nuvem), iguais ao player do Fire TV (player-engine.js).
-const HEARTBEAT_MS = 60000; // painel considera online se < 150 s
+const HEARTBEAT_MS = 120000; // painel considera online se < 300 s
+const HEALTHY_POLL_MS = 180000; // guarda/destaque/revalidação com tempo real saudável
 const TV_GUARD_MS = 30000; // consulta direta da TV (reserva do realtime): comandos/playlist
 const SPOTLIGHT_POLL_MS = 30000; // destaque de foto (só com modo evento)
 const SPOT_SHOW_MS = 10000; // destaque de foto: 10 s na tela (ver DELIVERY_GRACE_MS)
@@ -151,6 +152,7 @@ export function TvPlayer() {
   const [buffering, setBuffering] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
   const [mediaErrorCode, setMediaErrorCode] = useState<string>("");
+  const [rtHealthy, setRtHealthy] = useState(false);
 
   const tvIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -615,9 +617,10 @@ export function TvPlayer() {
             : 20000;
         setTimeout(() => setAlertMsg(null), Math.min(ms, 120000));
       })
-      .subscribe();
+      .subscribe((status) => setRtHealthy(status === "SUBSCRIBED"));
 
     return () => {
+      setRtHealthy(false);
       supabase.removeChannel(channel);
     };
   }, [tv?.id, loadPlaylist, runCommand]);
@@ -655,13 +658,13 @@ export function TvPlayer() {
     let shownKey = "";
     let hide: ReturnType<typeof setTimeout> | null = null;
     poll();
-    const t = setInterval(poll, SPOTLIGHT_POLL_MS);
+    const t = setInterval(poll, rtHealthy ? HEALTHY_POLL_MS : SPOTLIGHT_POLL_MS);
     return () => {
       stop = true;
       clearInterval(t);
       if (hide) clearTimeout(hide);
     };
-  }, [tv?.event_mode]);
+  }, [tv?.event_mode, rtHealthy]);
 
   // ---------- patrocinadores ----------
   useEffect(() => {
@@ -709,7 +712,10 @@ export function TvPlayer() {
     };
     beat();
     const interval = setInterval(beat, HEARTBEAT_MS);
-    const revalidate = setInterval(() => refreshTv(tvIdRef.current), 60000);
+    const revalidate = setInterval(
+      () => refreshTv(tvIdRef.current),
+      rtHealthy ? HEALTHY_POLL_MS : 60000,
+    );
 
     const guard = setInterval(async () => {
       const id = tvIdRef.current;
@@ -730,14 +736,14 @@ export function TvPlayer() {
       tvRef.current = row;
       if (structural) refreshTv(id);
       runCommand(row.command);
-    }, TV_GUARD_MS);
+    }, rtHealthy ? HEALTHY_POLL_MS : TV_GUARD_MS);
 
     return () => {
       clearInterval(interval);
       clearInterval(revalidate);
       clearInterval(guard);
     };
-  }, [refreshTv, runCommand]);
+  }, [refreshTv, runCommand, rtHealthy]);
 
   // ---------- Endomarketing: consulta rápida (reserva do realtime) enquanto o modo estiver ativo ----------
   const endoActiveFlag = !!tv?.is_endomarketing_active;
